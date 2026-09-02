@@ -1,0 +1,50 @@
+# ============================================================
+# Sovereign AI Workbench — Ollama Configuration
+# Owner: Roshan (feature/roshan-local-models-frontend)
+#
+# This file is the single source of truth for all local model
+# names and the Ollama API base URL.
+# Do NOT hard-code model names anywhere else in the project.
+# ============================================================
+
+ollama:
+  base_url: http://localhost:11434   # Default Ollama API endpoint
+
+models:
+  # -- Text / Reasoning model --
+  text:
+    name: qwen2.5:7b-instruct        # Verified on Roshan's laptop
+    id: 845dbda0ea48
+    tasks:
+      - reasoning
+      - document
+      - general
+      - summarization
+
+  # -- Vision model --
+  vision:
+    name: qwen2.5vl:7b               # Verified on Roshan's laptop
+    id: 5ced39dfa4ba
+    tasks:
+      - vision
+      - image
+      - ocr
+      - pid
+
+  # -- Coding model --
+  coding:
+    name: qwen2.5-coder:latest       # Verified on Roshan's laptop
+    id: dae161e27b0e
+    tasks:
+      - coding
+      - debugging
+      - code_generation
+
+# -- Setup commands (for other team members) --
+# To replicate Roshan's setup:
+#   1. Install Ollama from https://ollama.com
+#   2. ollama pull qwen2.5:7b-instruct
+#   3. ollama pull qwen2.5vl:7b
+#   4. ollama pull qwen2.5-coder:latest
+#   5. ollama list   <- verify all three appear
+#   6. ollama serve  <- starts the API on localhost:11434
