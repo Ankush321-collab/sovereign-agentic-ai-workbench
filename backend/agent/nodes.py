@@ -1,6 +1,7 @@
 import datetime
 import logging
 import asyncio
+import inspect
 from backend.agent.state import AgentState
 from backend.services.router_service import RouterService
 from backend.services.rag_service import RAGService
@@ -127,7 +128,7 @@ async def tool_executor_node(state: AgentState) -> AgentState:
 
         if func:
             try:
-                if asyncio.iscoroutinefunction(func):
+                if inspect.iscoroutinefunction(func):
                     res = await func(**tool_args)
                 else:
                     res = func(**tool_args)
@@ -160,8 +161,101 @@ async def reflection_node(state: AgentState) -> AgentState:
     add_audit_event(state, step="Reflection", action="evaluate_completeness", status="success", details="All planned steps executed cleanly.")
     return state
 
+import httpx
+
+import base64
+from pathlib import Path
+
+async def _call_local_llm(user_query: str, selected_model: str, task_type: str, context: list, tool_results: list, uploaded_file: str | None = None) -> str:
+    """Invokes local Ollama model (with vision support for images/drawings) to generate real answer."""
+    model_lower = (selected_model or "").lower()
+    
+    # Check if uploaded file is an image
+    images_b64 = []
+    is_image = False
+    if uploaded_file and Path(uploaded_file).exists():
+        suffix = Path(uploaded_file).suffix.lower()
+        if suffix in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
+            try:
+                b64 = base64.b64encode(Path(uploaded_file).read_bytes()).decode("utf-8")
+                images_b64.append(b64)
+                is_image = True
+            except Exception as ex:
+                logger.error(f"Error encoding image {uploaded_file}: {ex}")
+
+    # Select appropriate Ollama model
+    if is_image or "vl" in model_lower or "vision" in task_type:
+        ollama_model = "qwen2.5vl:latest"
+    elif "coder" in model_lower or task_type == "coding":
+        ollama_model = "qwen2.5-coder:7b"
+    else:
+        ollama_model = "qwen2.5:7b-instruct"
+
+    # Build prompt
+    prompt_parts = [
+        "You are Sovereign AI Workbench, a secure on-premise AI assistant running locally.",
+        "Answer the user's question directly, accurately, and thoroughly.",
+        "If an image or drawing is provided, inspect it closely and describe visible equipment, symbols, tags, text, measurements, and key findings."
+    ]
+
+    if context:
+        context_str = "\n".join([f"- [{c.get('source', 'KB')} (Page {c.get('page', 1)})]: {c.get('text', '')}" for c in context[:3]])
+        prompt_parts.append(f"\nLocal Knowledge Base Context:\n{context_str}")
+
+    for tr in tool_results:
+        res = tr.get("result")
+        if isinstance(res, dict):
+            if res.get("findings"):
+                prompt_parts.append(f"\nInspection / Tool Findings: {res['findings']}")
+            if res.get("equipment") or res.get("instruments"):
+                prompt_parts.append(f"\nExtracted P&ID Equipment: {res.get('equipment', [])} | Instruments: {res.get('instruments', [])}")
+
+    prompt_parts.append(f"\nUser Query: {user_query}\n\nAnswer:")
+    full_prompt = "\n".join(prompt_parts)
+
+    payload = {
+        "model": ollama_model,
+        "prompt": full_prompt,
+        "stream": False,
+        "options": {"temperature": 0.2, "num_predict": 500}
+    }
+    if images_b64:
+        payload["images"] = images_b64
+
+    try:
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            res = await client.post("http://localhost:11434/api/generate", json=payload)
+            if res.status_code == 200:
+                data = res.json()
+                answer = data.get("response", "").strip()
+                if answer:
+                    return answer
+    except Exception as e:
+        logger.warning(f"Ollama local LLM call failed ({e}) — trying fallback model")
+        # Try fallback to llava or text model
+        for fallback_model in ["llava:latest", "qwen2.5:7b-instruct"]:
+            try:
+                fb_payload = {
+                    "model": fallback_model,
+                    "prompt": full_prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.2, "num_predict": 400}
+                }
+                if images_b64 and fallback_model == "llava:latest":
+                    fb_payload["images"] = images_b64
+                async with httpx.AsyncClient(timeout=25.0) as client:
+                    res = await client.post("http://localhost:11434/api/generate", json=fb_payload)
+                    if res.status_code == 200:
+                        return res.json().get("response", "").strip()
+            except Exception:
+                pass
+
+    return ""
+
+
 async def finalizer_node(state: AgentState) -> AgentState:
     """Nodes 6: Finalizer Node - Assembles final user response with citations and deliverables."""
+    user_query = state.get("user_query", "")
     task_type = state.get("task_type", "general")
     model = state.get("selected_model", "Sarvam-30B")
     reason = state.get("routing_reason", "")
@@ -169,12 +263,19 @@ async def finalizer_node(state: AgentState) -> AgentState:
     generated_files = state.get("generated_files", [])
     tool_results = state.get("tool_results", [])
 
-    # Compose response
-    response_lines = [
-        f"### Sovereign AI Workbench Response\n",
-        f"**Model Routing**: Executed via `{model}` ({task_type.capitalize()} Task).",
-        f"*Reason*: {reason}\n"
-    ]
+    uploaded_file = state.get("uploaded_file")
+    # Generate real response from local model
+    llm_answer = await _call_local_llm(user_query, model, task_type, context, tool_results, uploaded_file)
+
+    response_lines = []
+
+    if llm_answer:
+        response_lines.append(llm_answer)
+        response_lines.append("")
+    else:
+        response_lines.append(f"### Sovereign AI Workbench Response\n")
+        response_lines.append(f"**Model Routing**: Executed via `{model}` ({task_type.capitalize()} Task).")
+        response_lines.append(f"*Reason*: {reason}\n")
 
     if context:
         response_lines.append("#### 📚 Grounded Knowledge Base Context:")
@@ -198,8 +299,6 @@ async def finalizer_node(state: AgentState) -> AgentState:
         response_lines.append("\n#### 📄 Generated Deliverable Files:")
         for gf in generated_files:
             response_lines.append(f"- `data/outputs/{gf}`")
-
-    response_lines.append("\n---\n🔒 **Sovereignty Proof**: 0 external network connections made. Data strictly on-premise.")
 
     state["final_response"] = "\n".join(response_lines)
     add_audit_event(state, step="Finalizer", action="generate_response", status="success", details="Response compiled successfully.")

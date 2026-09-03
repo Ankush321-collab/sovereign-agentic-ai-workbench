@@ -11,6 +11,9 @@ pandas>=2.0.0
 httpx>=0.24.0
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
+# Krishna — RAG & Local Knowledge Base
+chromadb>=1.5.0
+sentence-transformers>=3.0.0
 
 # Multimodal, OCR & Vision Dependencies (Pankaj)
 markitdown>=0.0.1a4

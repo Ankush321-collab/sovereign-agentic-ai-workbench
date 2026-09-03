@@ -1,6 +1,14 @@
 import os
 from pathlib import Path
 
+# ── Force 100% Offline / Air-Gapped Mode ──────────────────────────────────────
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Base Directories
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent

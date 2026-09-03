@@ -1,9 +1,12 @@
 import logging
 import httpx
 from pathlib import Path
-from backend.config import MULTIMODAL_SERVICE_URL, ENABLE_SERVICE_FALLBACKS
+from backend.config import ENABLE_SERVICE_FALLBACKS
 
 logger = logging.getLogger("multimodal_service")
+
+# Multimodal pipeline is now integrated directly into the main backend (port 8000)
+MULTIMODAL_ENDPOINT = "http://localhost:8000/multimodal/process"
 
 class MultimodalService:
     @staticmethod
@@ -12,14 +15,16 @@ class MultimodalService:
         Interfaces with Pankaj's Multimodal AI, OCR & P&ID pipeline.
         Extracts OCR text, layout, tables, and visual inspection/P&ID tags.
         """
-        payload = {"file_path": file_path}
+        payload = {"file_path": str(file_path)}
         try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                res = await client.post(f"{MULTIMODAL_SERVICE_URL}/multimodal/process", json=payload)
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(MULTIMODAL_ENDPOINT, json=payload)
                 if res.status_code == 200:
-                    return res.json()
+                    data = res.json()
+                    logger.info(f"Multimodal pipeline successfully processed: {file_path}")
+                    return data
         except Exception as e:
-            logger.warning(f"Failed to connect to Multimodal service at {MULTIMODAL_SERVICE_URL}: {e}")
+            logger.warning(f"Multimodal endpoint unavailable ({e}) — using fallback logic")
 
         if ENABLE_SERVICE_FALLBACKS:
             return MultimodalService._fallback_process(file_path)

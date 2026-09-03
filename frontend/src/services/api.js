@@ -142,7 +142,14 @@ export async function getFiles() {
     await mockDelay(300);
     return MOCK_FILES;
   }
-  return request('GET', '/files');
+  const data = await request('GET', '/files');
+  if (Array.isArray(data)) return data;
+  const deliverables = (data.generated_deliverables || []).map((name) => ({
+    name,
+    type: name.split('.').pop() || '',
+    created: new Date().toISOString(),
+  }));
+  return deliverables;
 }
 
 /**

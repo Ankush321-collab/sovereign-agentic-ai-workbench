@@ -1,35 +1,47 @@
 import logging
 import httpx
 from pathlib import Path
-from backend.config import RAG_SERVICE_URL, KNOWLEDGE_DIR, ENABLE_SERVICE_FALLBACKS
+from backend.config import KNOWLEDGE_DIR, ENABLE_SERVICE_FALLBACKS
 
 logger = logging.getLogger("rag_service")
+
+# RAG is now integrated directly into the main backend (port 8000)
+# No external service needed — calls the /rag/search endpoint on self
+RAG_ENDPOINT = "http://localhost:8000/rag/search"
 
 class RAGService:
     @staticmethod
     async def search_knowledge_base(query: str) -> list[dict]:
         """
-        Interfaces with Krishna's RAG & Local Knowledge Base service.
-        Returns document snippets with metadata citations (source, page, score).
+        Calls Krishna's integrated RAG endpoint (POST /rag/search).
+        Returns document chunks with citation metadata (source, page, score).
+        Falls back to local file scan if RAG service unavailable.
         """
-        payload = {"query": query}
+        payload = {"query": query, "top_k": 4}
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                res = await client.post(f"{RAG_SERVICE_URL}/rag/search", json=payload)
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                res = await client.post(RAG_ENDPOINT, json=payload)
                 if res.status_code == 200:
                     data = res.json()
                     return data.get("results", [])
         except Exception as e:
-            logger.warning(f"Failed to connect to RAG service at {RAG_SERVICE_URL}: {e}")
+            logger.warning(f"RAG endpoint unavailable ({e}) — using fallback")
 
         if ENABLE_SERVICE_FALLBACKS:
             return RAGService._fallback_search(query)
-            
         return []
 
     @staticmethod
     def _fallback_search(query: str) -> list[dict]:
-        query_words = set(query.lower().split())
+        stopwords = {
+            "the", "is", "at", "which", "on", "a", "an", "and", "or", "in", "of", "to",
+            "for", "with", "by", "from", "who", "what", "where", "when", "how", "why",
+            "tell", "me", "about", "this", "that", "these", "those", "are", "was", "were"
+        }
+        query_words = {w for w in query.lower().split() if len(w) > 2 and w not in stopwords}
+        if not query_words:
+            return []
+
         results = []
 
         # Scan text files in knowledge directory
@@ -43,26 +55,9 @@ class RAGService:
                             "source": file_path.name,
                             "page": 1,
                             "section": "Standard Operating Procedure",
-                            "score": 0.89
+                            "score": 0.85
                         })
                 except Exception as ex:
                     logger.error(f"Error reading local knowledge file {file_path}: {ex}")
-
-        # Default sample grounded context if directory is empty
-        if not results:
-            results.append({
-                "text": "Sovereign Industrial SOP - Emergency Shutdown Protocol: In event of valve pressure exceedance (>150 PSI), trigger automatic isolation valve AV-101 and log system alert.",
-                "source": "Confidential_Refinery_Safety_SOP.pdf",
-                "page": 14,
-                "section": "Emergency Isolation Protocol",
-                "score": 0.94
-            })
-            results.append({
-                "text": "Maintenance Protocol section 4: Quarterly inspection required for all centrifugal pumps (P-101 series) including vibration analysis and mechanical seal check.",
-                "source": "Equipment_Maintenance_Manual.pdf",
-                "page": 28,
-                "section": "Pump Maintenance Standard",
-                "score": 0.88
-            })
 
         return results
