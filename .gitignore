@@ -1,13 +1,18 @@
-# Byte-compiled / optimized / DLL files
+# ============================================================
+# Sovereign AI Workbench — .gitignore
+# Team: Quanta Codes | SIH 2026
+# ============================================================
+
+# ── Python ───────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
+*.pyo
+*.pyd
 *.so
+.Python
 
 # Distribution / packaging
-.Python
 build/
 develop-eggs/
 dist/
@@ -22,21 +27,13 @@ var/
 wheels/
 share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
+*.egg-link
+.installed.cfg
 MANIFEST
+pip-wheel-metadata/
 
-# Pytest & Coverage
-.pytest_cache/
-.coverage
-.coverage.*
-*.cover
-*.pyo
-htmlcov/
-.nox/
-.hypothesis/
-
-# Virtual Environments
+# ── Virtual environments ─────────────────────────────────────
 .venv/
 venv/
 ENV/
@@ -44,24 +41,102 @@ env/
 env.bak/
 venv.bak/
 
-# Environment Variables
+# ── Environment Variables / Secrets ──────────────────────────
 .env
 .env.local
 .env.*.local
+!.env.example
 
-# IDE & Editor files
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ── Pytest & Coverage ─────────────────────────────────────────
+.pytest_cache/
+.cache/
+.coverage
+.coverage.*
+*.cover
+coverage.xml
+htmlcov/
+.nox/
+.hypothesis/
+
+# ── Mypy / Type Checkers ─────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ── Node / React / Vite ───────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/dist-ssr/
+*.local
+
+# ── OS files ──────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── IDE / Editor ──────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 *.sublime-project
 *.sublime-workspace
-.DS_Store
+*~
+*.suo
+*.user
+.vs/
 
-# Data Directories - Keep directory structure but ignore runtime uploads/outputs
+# ── Docker ────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── ChromaDB / Vector store data ──────────────────────────────
+data/chroma/
+rag/chroma_db/
+*.chroma
+
+# ── Runtime Data ──────────────────────────────────────────────
 data/uploads/*
 !data/uploads/.gitkeep
+
 data/outputs/*
 !data/outputs/.gitkeep
+
 data/knowledge/*
 !data/knowledge/.gitkeep
+
+# ── Ollama / Model files ──────────────────────────────────────
+# Don't commit large model blobs
+models/
+*.gguf
+*.bin
+*.safetensors
+
+# ── Generated output files ───────────────────────────────────
+generated/
+output/
+*.tmp
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Secrets / Keys ────────────────────────────────────────────
+*.pem
+*.key
+*.cert
+secrets.yaml
+secrets.json
