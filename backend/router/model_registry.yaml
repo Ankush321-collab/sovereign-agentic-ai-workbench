@@ -1,0 +1,27 @@
+models:
+  reasoning:
+    name: qwen-reasoning
+    endpoint: http://localhost:11434
+    tasks:
+      - reasoning
+      - document
+      - general
+    enabled: true
+    is_default: true
+
+  coding:
+    name: qwen-coder
+    endpoint: http://localhost:11434
+    tasks:
+      - coding
+      - debugging
+    enabled: true
+
+  vision:
+    name: qwen-vl
+    endpoint: http://localhost:11434
+    tasks:
+      - vision
+      - image
+      - document
+    enabled: true
