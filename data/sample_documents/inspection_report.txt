@@ -1,0 +1,29 @@
+CONFIDENTIAL INDUSTRIAL INSPECTION REPORT
+Plant Facility: Jamnagar Refining & Petrochemical Complex
+Inspection Date: 2026-08-28
+Inspector ID: QA-QC-8902
+Status: ACTION REQUIRED
+
+============================================================
+1. EXECUTIVE SUMMARY
+============================================================
+Ultrasonic thickness gauging and visual dye penetrant testing were conducted on the secondary cooling loop flange FL-402 and associated high-pressure separator vessel V-204 nozzles.
+
+============================================================
+2. QUANTITATIVE MEASUREMENT MATRIX
+============================================================
+| Component Tag | Location / Section | Nominal (mm) | Measured (mm) | Min Allowed (mm) | Condition Status |
+|---|---|---|---|---|---|
+| FL-402-A | Flange Neck Welds | 5.2 | 3.8 | 4.0 | ALERT - Below Threshold |
+| FL-402-B | Mating Gasket Ring Face | 5.0 | 4.8 | 4.2 | NORMAL |
+| V-204-N1 | Inflow Nozzle Throat | 8.0 | 7.6 | 7.0 | NORMAL |
+| V-204-N2 | Slurry Drain Line | 6.5 | 5.1 | 5.5 | WARNING - Accelerated Wear |
+
+============================================================
+3. SUMMARY OF OBSERVATIONS & FINDINGS
+============================================================
+Findings:
+- Wall thickness on component FL-402-A measured at 3.8mm, dropping below the mandatory 4.0mm minimum threshold.
+- Galvanic pitting corrosion observed around the inner circumference of the primary seal.
+- Accelerated wall thinning detected on vessel drain nozzle V-204-N2 due to slurry abrasion.
+- Immediate engineering maintenance approval note generation is recommended.
