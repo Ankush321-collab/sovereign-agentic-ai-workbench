@@ -1,0 +1,24 @@
+{
+  "name": "sovereign-ai-workbench",
+  "version": "1.0.0",
+  "description": "On-Premise Multi-Model Agentic AI Workbench for Confidential Industrial Environments (SIH 2026 - Team Quanta Codes)",
+  "scripts": {
+    "start": "python run.py",
+    "turbo": "python run.py",
+    "dev": "python run.py",
+    "backend": "python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload",
+    "frontend": "npm --prefix frontend run dev",
+    "test": "pytest tests/ -v"
+  },
+  "keywords": [
+    "sovereign-ai",
+    "agentic-ai",
+    "sih2026",
+    "air-gapped",
+    "langgraph",
+    "rag",
+    "multimodal"
+  ],
+  "author": "Team Quanta Codes",
+  "license": "ISC"
+}

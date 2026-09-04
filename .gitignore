@@ -9,44 +9,65 @@ __pycache__/
 *$py.class
 *.pyo
 *.pyd
+*.so
 .Python
-*.egg
-*.egg-info/
-dist/
+
+# Distribution / packaging
 build/
+develop-eggs/
+dist/
+downloads/
 eggs/
-parts/
-var/
-sdist/
-wheels/
-*.egg-link
-.installed.cfg
+.eggs/
 lib/
 lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+*.egg
+*.egg-link
+.installed.cfg
+MANIFEST
 pip-wheel-metadata/
 
-# Virtual environments
+# ── Virtual environments ─────────────────────────────────────
 .venv/
 venv/
-env/
 ENV/
-.env.local
+env/
+env.bak/
+venv.bak/
 
-# pytest
+# ── Environment Variables / Secrets ──────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ── Pytest & Coverage ─────────────────────────────────────────
 .pytest_cache/
 .cache/
-htmlcov/
 .coverage
 .coverage.*
-coverage.xml
 *.cover
+coverage.xml
+htmlcov/
+.nox/
+.hypothesis/
 
-# mypy / type checkers
+# ── Mypy / Type Checkers ─────────────────────────────────────
 .mypy_cache/
 .dmypy.json
 dmypy.json
 
-# ── Node / React / Vite ──────────────────────────────────────
+# ── Node / React / Vite ───────────────────────────────────────
 node_modules/
 frontend/node_modules/
 frontend/dist/
@@ -54,16 +75,7 @@ frontend/.vite/
 frontend/dist-ssr/
 *.local
 
-# ── Environment files ────────────────────────────────────────
-# Keep .env.example committed; never commit real secrets
-.env
-.env.*
-!.env.example
-frontend/.env
-frontend/.env.*
-!frontend/.env.example
-
-# ── OS files ─────────────────────────────────────────────────
+# ── OS files ──────────────────────────────────────────────────
 .DS_Store
 .DS_Store?
 ._*
@@ -73,23 +85,35 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# ── IDE / Editor ─────────────────────────────────────────────
+# ── IDE / Editor ──────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 *~
 *.suo
 *.user
 .vs/
 
-# ── Docker ───────────────────────────────────────────────────
+# ── Docker ────────────────────────────────────────────────────
 docker-compose.override.yml
 
-# ── ChromaDB / Vector store data ─────────────────────────────
+# ── ChromaDB / Vector store data ──────────────────────────────
 data/chroma/
 rag/chroma_db/
 *.chroma
+
+# ── Runtime Data ──────────────────────────────────────────────
+data/uploads/*
+!data/uploads/.gitkeep
+
+data/outputs/*
+!data/outputs/.gitkeep
+
+data/knowledge/*
+!data/knowledge/.gitkeep
 
 # ── Ollama / Model files ──────────────────────────────────────
 # Don't commit large model blobs
@@ -99,19 +123,18 @@ models/
 *.safetensors
 
 # ── Generated output files ───────────────────────────────────
-# Agent-generated documents should not be committed
 generated/
 output/
 *.tmp
 
-# ── Logs ─────────────────────────────────────────────────────
+# ── Logs ──────────────────────────────────────────────────────
 *.log
 logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# ── Secrets / Keys ───────────────────────────────────────────
+# ── Secrets / Keys ────────────────────────────────────────────
 *.pem
 *.key
 *.cert

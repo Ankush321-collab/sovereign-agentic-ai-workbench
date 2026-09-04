@@ -1,0 +1,115 @@
+# ==============================================================================
+# Sovereign AI Workbench — Docker Compose Multi-Container Orchestration
+# Air-Gapped / On-Premise Multi-Model Agentic System
+# ==============================================================================
+
+version: "3.8"
+
+services:
+  # ── 1. Backend Service (FastAPI + LangGraph + MarkItDown + RAG) ────────────
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: sovereign-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      # Mount data folder for persistent uploads, vector index, and outputs
+      - ./data:/app/data
+    networks:
+      - sovereign-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── 2. Frontend Service (React SPA + Nginx Reverse Proxy) ──────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        VITE_API_URL: ""
+        VITE_USE_MOCK: "false"
+    container_name: sovereign-frontend
+    restart: unless-stopped
+    ports:
+      # Port 5173 for familiar Vite development access & Port 80 for production HTTP
+      - "5173:80"
+      - "80:80"
+    networks:
+      - sovereign-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  # ── 3. Ollama Inference Engine (Air-Gapped Local LLM Server) ───────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sovereign-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - sovereign-net
+    # To enable NVIDIA GPU acceleration in Docker, uncomment below:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ── 4. Optional Model Initialization Helper ─────────────────────────────────
+  # Run `docker compose --profile init-models up` to automatically pull
+  # the default recommended models into the persistent named volume.
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: sovereign-ollama-init
+    profiles:
+      - init-models
+    networks:
+      - sovereign-net
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Ollama service..."
+        while ! curl -s http://ollama:11434/api/tags > /dev/null; do
+          sleep 2
+        done
+        echo "Pulling qwen2.5:7b-instruct..."
+        ollama pull qwen2.5:7b-instruct
+        echo "Model initialization complete!"
+    depends_on:
+      - ollama
+
+# ── Persistent Storage Volumes ────────────────────────────────────────────────
+volumes:
+  ollama_models:
+    name: sovereign_ollama_models
+
+# ── Isolated Air-Gapped Network ───────────────────────────────────────────────
+networks:
+  sovereign-net:
+    name: sovereign-net
+    driver: bridge
