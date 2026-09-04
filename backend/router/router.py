@@ -38,7 +38,14 @@ class ModelRouter:
         try:
             with open(self.registry_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-                return data.get("models", {})
+                models = data.get("models", {})
+                ollama_env_url = os.getenv("OLLAMA_BASE_URL")
+                if ollama_env_url and isinstance(models, dict):
+                    for m_cfg in models.values():
+                        if isinstance(m_cfg, dict) and "endpoint" in m_cfg:
+                            if "localhost:11434" in m_cfg["endpoint"] or "127.0.0.1:11434" in m_cfg["endpoint"]:
+                                m_cfg["endpoint"] = ollama_env_url
+                return models
         except Exception:
             return self._default_config()
 

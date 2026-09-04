@@ -17,9 +17,12 @@ sentence-transformers>=3.0.0
 
 # Multimodal, OCR & Vision Dependencies (Pankaj)
 markitdown>=0.0.1a4
+pypdf>=5.0.0
 pytesseract>=0.3.10
 pdfplumber>=0.10.0
 PyMuPDF>=1.23.0
 opencv-python-headless>=4.8.0
 pillow>=10.0.0
 numpy>=1.24.0
+pyyaml>=6.0
+python-dotenv>=1.0.0

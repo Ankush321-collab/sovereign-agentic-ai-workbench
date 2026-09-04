@@ -6,6 +6,7 @@ from backend.agent.state import AgentState
 from backend.services.router_service import RouterService
 from backend.services.rag_service import RAGService
 from backend.tools.registry import TOOL_REGISTRY, get_tool
+from backend.config import OLLAMA_BASE_URL
 
 logger = logging.getLogger("agent_nodes")
 
@@ -244,7 +245,7 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
 
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
-            res = await client.post("http://localhost:11434/api/generate", json=payload)
+            res = await client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
             if res.status_code == 200:
                 data = res.json()
                 answer = data.get("response", "").strip()
@@ -266,7 +267,7 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
                 if images_b64 and "vl" in fallback_model:
                     fb_payload["images"] = images_b64
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    res = await client.post("http://localhost:11434/api/generate", json=fb_payload)
+                    res = await client.post(f"{OLLAMA_BASE_URL}/api/generate", json=fb_payload)
                     if res.status_code == 200:
                         return res.json().get("response", "").strip()
             except Exception:
