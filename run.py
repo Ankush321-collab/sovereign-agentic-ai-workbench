@@ -17,11 +17,26 @@ import threading
 import webbrowser
 from pathlib import Path
 
+# Ensure UTF-8 output on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ROOT_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = ROOT_DIR / "frontend"
 
 def log(prefix: str, msg: str):
-    print(f"[{prefix}] {msg}", flush=True)
+    try:
+        print(f"[{prefix}] {msg}", flush=True)
+    except Exception:
+        pass
 
 def stream_output(proc: subprocess.Popen, prefix: str):
     try:
@@ -64,6 +79,8 @@ def main():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1
         )
         processes.append(("Backend", backend_proc))
@@ -79,6 +96,8 @@ def main():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             shell=True
         )

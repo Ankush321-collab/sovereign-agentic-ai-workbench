@@ -139,6 +139,17 @@ async def tool_executor_node(state: AgentState) -> AgentState:
                 if isinstance(res, dict) and "filename" in res:
                     generated_files.append(res["filename"])
 
+                # If OCR/MarkItDown extracted document text, inject into context sources
+                if tool_name == "ocr_document" and isinstance(res, dict) and res.get("text"):
+                    doc_src = res.get("source") or (Path(tool_args.get("file_path", "")).name if tool_args.get("file_path") else "Document")
+                    state["context"].insert(0, {
+                        "text": res["text"][:3000],
+                        "source": f"Uploaded File ({doc_src})",
+                        "page": res.get("pages", 1),
+                        "score": 1.0,
+                        "extractor": "markitdown"
+                    })
+
                 add_audit_event(
                     state,
                     step="Tool Execution",
@@ -167,7 +178,7 @@ import base64
 from pathlib import Path
 
 async def _call_local_llm(user_query: str, selected_model: str, task_type: str, context: list, tool_results: list, uploaded_file: str | None = None) -> str:
-    """Invokes local Ollama model (with vision support for images/drawings) to generate real answer."""
+    """Invokes local Ollama model (with vision support for images/drawings and MarkItDown text) to generate real answer."""
     model_lower = (selected_model or "").lower()
     
     # Check if uploaded file is an image
@@ -183,32 +194,41 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
             except Exception as ex:
                 logger.error(f"Error encoding image {uploaded_file}: {ex}")
 
-    # Select appropriate Ollama model
-    if is_image or "vl" in model_lower or "vision" in task_type:
-        ollama_model = "qwen2.5vl:latest"
+    # Select appropriate Ollama model (using exact verified local tags from config)
+    if is_image or "vl" in model_lower:
+        ollama_model = "qwen2.5vl:7b"
     elif "coder" in model_lower or task_type == "coding":
-        ollama_model = "qwen2.5-coder:7b"
+        ollama_model = "qwen2.5-coder:latest"
     else:
         ollama_model = "qwen2.5:7b-instruct"
 
     # Build prompt
     prompt_parts = [
         "You are Sovereign AI Workbench, a secure on-premise AI assistant running locally.",
-        "Answer the user's question directly, accurately, and thoroughly.",
-        "If an image or drawing is provided, inspect it closely and describe visible equipment, symbols, tags, text, measurements, and key findings."
+        "Answer the user's question directly, accurately, and thoroughly using the provided context and document content.",
+        "If a document, receipt, or manual is provided, read all extracted text and tables carefully to answer specific questions."
     ]
 
-    if context:
-        context_str = "\n".join([f"- [{c.get('source', 'KB')} (Page {c.get('page', 1)})]: {c.get('text', '')}" for c in context[:3]])
-        prompt_parts.append(f"\nLocal Knowledge Base Context:\n{context_str}")
-
+    # Add extracted document content from MarkItDown / OCR tools
+    doc_context_added = False
     for tr in tool_results:
         res = tr.get("result")
         if isinstance(res, dict):
+            extracted_txt = res.get("text", "").strip()
+            if extracted_txt:
+                doc_src = res.get("source") or "Uploaded Document"
+                prompt_parts.append(f"\n[UPLOADED DOCUMENT CONTENT via MarkItDown — Source: {doc_src}]:\n{extracted_txt[:6000]}")
+                doc_context_added = True
+            if res.get("tables"):
+                prompt_parts.append(f"\n[EXTRACTED TABLES / ROWS]:\n{res['tables']}")
             if res.get("findings"):
                 prompt_parts.append(f"\nInspection / Tool Findings: {res['findings']}")
             if res.get("equipment") or res.get("instruments"):
                 prompt_parts.append(f"\nExtracted P&ID Equipment: {res.get('equipment', [])} | Instruments: {res.get('instruments', [])}")
+
+    if context and not doc_context_added:
+        context_str = "\n".join([f"- [{c.get('source', 'KB')} (Page {c.get('page', 1)})]: {c.get('text', '')}" for c in context[:3]])
+        prompt_parts.append(f"\nLocal Knowledge Base Context:\n{context_str}")
 
     prompt_parts.append(f"\nUser Query: {user_query}\n\nAnswer:")
     full_prompt = "\n".join(prompt_parts)
@@ -217,13 +237,13 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
         "model": ollama_model,
         "prompt": full_prompt,
         "stream": False,
-        "options": {"temperature": 0.2, "num_predict": 500}
+        "options": {"temperature": 0.2, "num_predict": 600}
     }
     if images_b64:
         payload["images"] = images_b64
 
     try:
-        async with httpx.AsyncClient(timeout=35.0) as client:
+        async with httpx.AsyncClient(timeout=45.0) as client:
             res = await client.post("http://localhost:11434/api/generate", json=payload)
             if res.status_code == 200:
                 data = res.json()
@@ -232,18 +252,20 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
                     return answer
     except Exception as e:
         logger.warning(f"Ollama local LLM call failed ({e}) — trying fallback model")
-        # Try fallback to llava or text model
-        for fallback_model in ["llava:latest", "qwen2.5:7b-instruct"]:
+        # Try fallback models available locally
+        for fallback_model in ["qwen2.5:7b-instruct", "qwen2.5vl:7b", "qwen2.5-coder:latest"]:
+            if fallback_model == ollama_model:
+                continue
             try:
                 fb_payload = {
                     "model": fallback_model,
                     "prompt": full_prompt,
                     "stream": False,
-                    "options": {"temperature": 0.2, "num_predict": 400}
+                    "options": {"temperature": 0.2, "num_predict": 500}
                 }
-                if images_b64 and fallback_model == "llava:latest":
+                if images_b64 and "vl" in fallback_model:
                     fb_payload["images"] = images_b64
-                async with httpx.AsyncClient(timeout=25.0) as client:
+                async with httpx.AsyncClient(timeout=30.0) as client:
                     res = await client.post("http://localhost:11434/api/generate", json=fb_payload)
                     if res.status_code == 200:
                         return res.json().get("response", "").strip()
@@ -291,7 +313,11 @@ async def finalizer_node(state: AgentState) -> AgentState:
             if tname == "run_code":
                 response_lines.append(f"- **Code Execution Sandbox**: Output: `{res.get('stdout', '').strip()}` ({res.get('execution_environment')})")
             elif tname == "ocr_document":
-                response_lines.append(f"- **OCR / Vision Pipeline**: Processed file with findings: `{res.get('findings')}`")
+                doc_name = res.get('source') or 'Uploaded Document'
+                pages = res.get('pages', 1)
+                extractor = res.get('model_used') or res.get('extractor') or 'MarkItDown'
+                char_count = res.get('char_count', len(res.get('text', '')))
+                response_lines.append(f"- **OCR / Document Pipeline ({extractor})**: Parsed `{doc_name}` ({pages} page(s), {char_count} chars extracted).")
             elif tname in ["generate_docx", "generate_pptx", "edit_spreadsheet"]:
                 response_lines.append(f"- **Deliverable Generated**: `{res.get('filename')}`")
 

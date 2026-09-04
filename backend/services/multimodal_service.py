@@ -13,8 +13,43 @@ class MultimodalService:
     async def process_document(file_path: str) -> dict:
         """
         Interfaces with Pankaj's Multimodal AI, OCR & P&ID pipeline.
-        Extracts OCR text, layout, tables, and visual inspection/P&ID tags.
+        Extracts OCR text, layout, tables, and visual inspection/P&ID tags using MarkItDown.
         """
+        # 1. Direct in-process extraction via MarkItDown / OCR engine (fastest & most reliable)
+        try:
+            from backend.multimodal.ocr_engine import ocr_document
+            from backend.multimodal.pid_parser import parse_pid_tags, detect_is_pid
+            ocr_res = ocr_document(file_path)
+            if ocr_res.get("success") and (ocr_res.get("text") or ocr_res.get("tables")):
+                extracted_text = ocr_res.get("text", "")
+                tables = ocr_res.get("tables", [])
+                pages = ocr_res.get("pages", 1)
+                findings = []
+                equipment = []
+                instruments = []
+                if detect_is_pid(extracted_text, Path(file_path).name):
+                    pid_res = parse_pid_tags(extracted_text)
+                    equipment = pid_res.get("equipment", [])
+                    instruments = pid_res.get("instruments", [])
+                    if equipment or instruments:
+                        findings.append(f"Identified {len(equipment)} equipment and {len(instruments)} instruments in P&ID diagram")
+
+                return {
+                    "success": True,
+                    "type": ocr_res.get("file_type", "document"),
+                    "text": extracted_text,
+                    "pages": pages,
+                    "tables": tables,
+                    "findings": findings,
+                    "equipment": equipment,
+                    "instruments": instruments,
+                    "confidence": ocr_res.get("confidence", 0.95),
+                    "model_used": "markitdown"
+                }
+        except Exception as ex:
+            logger.warning(f"In-process OCR extraction error: {ex}")
+
+        # 2. HTTP call to multimodal endpoint if external
         payload = {"file_path": str(file_path)}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -24,7 +59,7 @@ class MultimodalService:
                     logger.info(f"Multimodal pipeline successfully processed: {file_path}")
                     return data
         except Exception as e:
-            logger.warning(f"Multimodal endpoint unavailable ({e}) — using fallback logic")
+            logger.warning(f"Multimodal endpoint unavailable ({e}) — checking fallback logic")
 
         if ENABLE_SERVICE_FALLBACKS:
             return MultimodalService._fallback_process(file_path)

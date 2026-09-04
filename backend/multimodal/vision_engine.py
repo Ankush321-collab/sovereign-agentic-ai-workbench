@@ -12,14 +12,37 @@ Falls back gracefully if Ollama is not running or vision model unavailable.
 import logging
 import httpx
 import base64
+import os
+import re
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("multimodal.vision")
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-VISION_MODEL = "qwen2.5vl:latest"        # Qwen2.5-VL via Ollama
-FALLBACK_VISION_MODEL = "llava:latest"   # llava as secondary vision model
+# Resolve Ollama base URL and model name from environment or config/ollama_config.yaml
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_config_path = PROJECT_ROOT / "config" / "ollama_config.yaml"
+_ollama_base = os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_URL")
+_vision_model = os.getenv("VISION_MODEL")
+if _config_path.exists():
+    try:
+        _txt = _config_path.read_text()
+        if not _ollama_base:
+            m = re.search(r"base_url:\s*(\S+)", _txt)
+            if m:
+                _ollama_base = m.group(1).strip()
+        if not _vision_model:
+            m2 = re.search(r"vision:\s*[\s\S]*?name:\s*(\S+)", _txt)
+            if m2:
+                _vision_model = m2.group(1).strip()
+    except Exception:
+        logger.debug("Failed to parse config/ollama_config.yaml; falling back to envs/defaults")
+
+OLLAMA_BASE_URL = (_ollama_base or "http://localhost:11434").rstrip("/")
+OLLAMA_URL = f"{OLLAMA_BASE_URL}/api/generate"
+# Prefer explicit config, then sensible local default matching common image tags
+VISION_MODEL = _vision_model or "qwen2.5vl:7b"
+FALLBACK_VISION_MODEL = "llava:latest"
 
 
 def _encode_image_base64(file_path: str) -> str | None:
@@ -88,11 +111,58 @@ async def _call_ollama_vision(model: str, prompt: str, img_b64: str) -> dict:
             "stream": False,
             "options": {"temperature": 0.1, "num_predict": 500}
         }
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            res = await client.post(OLLAMA_URL, json=payload)
-            if res.status_code == 200:
-                data = res.json()
-                return {"success": True, "text": data.get("response", ""), "model": model}
+        async with httpx.AsyncClient(timeout=40.0) as client:
+            # Try the /api/generate shape first
+            try:
+                res = await client.post(OLLAMA_URL, json=payload)
+            except Exception:
+                res = None
+
+            if res is not None and res.status_code == 200:
+                try:
+                    data = res.json()
+                except Exception:
+                    text = res.text
+                    return {"success": True, "text": text, "model": model, "raw": res.text}
+
+                # Ollama generate may return 'response' or 'text'
+                text = data.get("response") or data.get("text") or ""
+                # Some variants return choices/message
+                if not text:
+                    if isinstance(data.get("message"), dict):
+                        text = data.get("message", {}).get("content", "")
+                    elif isinstance(data.get("choices"), list) and data["choices"]:
+                        c = data["choices"][0]
+                        text = c.get("text") or (c.get("message") or {}).get("content", "")
+
+                if text:
+                    return {"success": True, "text": text, "model": model, "raw": data}
+
+            # If /api/generate didn't return expected content, try the chat endpoint
+            try:
+                chat_payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt, "images": [img_b64]}],
+                    "stream": False,
+                    "options": {"temperature": 0.1}
+                }
+                chat_url = OLLAMA_BASE_URL + "/api/chat"
+                res2 = await client.post(chat_url, json=chat_payload)
+                if res2.status_code == 200:
+                    try:
+                        d2 = res2.json()
+                    except Exception:
+                        return {"success": True, "text": res2.text, "model": model, "raw": res2.text}
+
+                    # chat returns message.content or similar
+                    text2 = (d2.get("message") or {}).get("content") if isinstance(d2.get("message"), dict) else ""
+                    if not text2 and isinstance(d2.get("choices"), list) and d2["choices"]:
+                        m = d2["choices"][0].get("message") or {}
+                        text2 = m.get("content") or d2["choices"][0].get("text", "")
+                    if text2:
+                        return {"success": True, "text": text2, "model": model, "raw": d2}
+            except Exception as e:
+                logger.debug(f"Chat endpoint attempt failed: {e}")
     except Exception as e:
         logger.warning(f"Ollama vision call failed for model {model}: {e}")
     return {"success": False}
@@ -127,10 +197,53 @@ def _build_vision_prompt(filename: str, context: str) -> str:
 
 def _parse_vision_response(text: str, model: str, filename: str) -> dict:
     """Parse the vision model's text response into structured output."""
+    import json
+    import re
+
     findings = []
     values = []
 
-    for line in text.split("\n"):
+    txt = text.strip() if isinstance(text, str) else ""
+
+    # If model returned JSON (or JSON inside markdown fences), extract it
+    if txt.startswith("{") or txt.startswith("["):
+        try:
+            parsed = json.loads(txt)
+            if isinstance(parsed, dict):
+                if parsed.get("findings"):
+                    findings = parsed.get("findings")
+                elif parsed.get("text"):
+                    findings = [parsed.get("text")]
+                # numeric values
+                values = parsed.get("values", [])
+                return {
+                    "success": True,
+                    "type": parsed.get("type", _detect_file_type_from_name(filename)),
+                    "findings": findings[:10],
+                    "values": values[:10],
+                    "confidence": parsed.get("confidence", 0.88),
+                    "model_used": model,
+                    "raw_response": txt[:1000]
+                }
+        except Exception:
+            pass
+
+    # Extract JSON from fenced markdown if present
+    if "```json" in txt or "```" in txt:
+        try:
+            # strip fences
+            if "```json" in txt:
+                body = txt.split("```json", 1)[1].split("```", 1)[0]
+            else:
+                body = txt.split("```", 1)[1].split("```", 1)[0]
+            parsed = json.loads(body)
+            if isinstance(parsed, dict) and parsed.get("findings"):
+                return _parse_vision_response(json.dumps(parsed), model, filename)
+        except Exception:
+            pass
+
+    # Fallback: extract bullet lines and numeric values
+    for line in txt.split("\n"):
         line = line.strip()
         if not line:
             continue
@@ -139,22 +252,20 @@ def _parse_vision_response(text: str, model: str, filename: str) -> dict:
             if clean:
                 findings.append(clean)
 
-    import re
-    # Extract numeric measurements
-    for m in re.findall(r"[\d.]+\s*(?:mm|PSI|GPM|°C|bar|kPa|%)", text):
+    for m in re.findall(r"[\d.]+\s*(?:mm|PSI|GPM|°C|bar|kPa|%)", txt):
         values.append(m.strip())
 
     if not findings:
-        findings = [text[:300]] if text else ["No findings extracted"]
+        findings = [txt[:300]] if txt else ["No findings extracted"]
 
     return {
         "success": True,
         "type": _detect_file_type_from_name(filename),
         "findings": findings[:10],
-        "values": list(set(values))[:10],
+        "values": list(dict.fromkeys(values))[:10],
         "confidence": 0.88,
         "model_used": model,
-        "raw_response": text[:500]
+        "raw_response": txt[:1000]
     }
 
 

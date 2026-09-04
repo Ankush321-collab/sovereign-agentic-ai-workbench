@@ -31,6 +31,16 @@ def ocr_document(file_path: str) -> dict[str, Any]:
     path = Path(file_path)
 
     if not path.exists():
+        try:
+            from backend.config import UPLOADS_DIR, PROJECT_ROOT, KNOWLEDGE_DIR
+            for candidate in [UPLOADS_DIR / file_path, UPLOADS_DIR / Path(file_path).name, PROJECT_ROOT / file_path, KNOWLEDGE_DIR / file_path]:
+                if candidate.exists():
+                    path = candidate
+                    break
+        except Exception:
+            pass
+
+    if not path.exists():
         return {
             "success": False,
             "error": f"File not found: {file_path}",
