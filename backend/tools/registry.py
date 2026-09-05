@@ -1,7 +1,8 @@
-from typing import Callable, Dict, Any
+﻿from typing import Callable, Dict, Any
 from backend.tools.file_tool import read_file, write_file
 from backend.tools.code_tool import run_code
 from backend.tools.document_tool import generate_docx, generate_pptx, edit_spreadsheet, ocr_document
+from backend.tools.psu_note_generator import generate_psu_approval_note
 from backend.services.rag_service import RAGService
 
 # Central Tool Registry mapping tool name to tool function and schema metadata
@@ -30,6 +31,11 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "function": generate_docx,
         "description": "Generate an executive/industrial Word (.docx) approval note or document.",
         "parameters": ["title", "content", "output_filename"]
+    },
+    "generate_psu_note": {
+        "function": generate_psu_approval_note,
+        "description": "Generate an official Indian PSU Secretariat Green-Sheet Note for Approval (.docx).",
+        "parameters": ["data", "output_filename"]
     },
     "generate_pptx": {
         "function": generate_pptx,

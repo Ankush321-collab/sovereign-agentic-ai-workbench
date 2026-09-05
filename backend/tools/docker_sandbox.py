@@ -1,6 +1,7 @@
-import subprocess
+﻿import subprocess
 import logging
 import tempfile
+import shutil
 import sys
 from pathlib import Path
 
@@ -13,23 +14,23 @@ class DockerSandbox:
     """
     @staticmethod
     def execute_python_code(code: str, timeout: int = 10) -> dict:
-        # Check if Docker is available
-        docker_cmd = ["docker", "run", "--rm", "--network", "none", "python:3.10-slim", "python", "-c", code]
-        
-        try:
-            res = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=timeout)
-            if res.returncode == 0:
-                return {
-                    "success": True,
-                    "stdout": res.stdout,
-                    "stderr": res.stderr,
-                    "execution_environment": "Docker Sandbox (--network none)"
-                }
-            logger.info("Docker daemon not active or image missing, using safe subprocess sandbox fallback.")
-            return DockerSandbox._safe_subprocess_fallback(code, timeout)
-        except Exception as ex:
-            logger.info(f"Docker sandbox execution not available ({ex}), using safe subprocess fallback.")
-            return DockerSandbox._safe_subprocess_fallback(code, timeout)
+        # Check if Docker binary is present on the host system
+        if shutil.which("docker"):
+            docker_cmd = ["docker", "run", "--rm", "--network", "none", "python:3.10-slim", "python", "-c", code]
+            try:
+                res = subprocess.run(docker_cmd, capture_output=True, stdin=subprocess.DEVNULL, text=True, timeout=min(timeout, 3))
+                if res.returncode == 0:
+                    return {
+                        "success": True,
+                        "stdout": res.stdout,
+                        "stderr": res.stderr,
+                        "execution_environment": "Docker Sandbox (--network none)"
+                    }
+                logger.info("Docker daemon returned non-zero, using safe subprocess sandbox fallback.")
+            except Exception as ex:
+                logger.info(f"Docker sandbox not available ({ex}), using safe subprocess sandbox fallback.")
+
+        return DockerSandbox._safe_subprocess_fallback(code, timeout)
 
     @staticmethod
     def _safe_subprocess_fallback(code: str, timeout: int) -> dict:
@@ -41,6 +42,7 @@ class DockerSandbox:
             res = subprocess.run(
                 [sys.executable, tmp_path],
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 timeout=timeout
             )

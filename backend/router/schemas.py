@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
+﻿from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 
 class RouteRequest(BaseModel):
     query: str
@@ -33,3 +33,31 @@ class HistoryItem(BaseModel):
 
 class HistoryResponse(BaseModel):
     history: List[HistoryItem]
+
+class SocketConnection(BaseModel):
+    pid: int
+    local_address: str
+    remote_address: Optional[str] = None
+    status: str
+    is_loopback: bool
+    is_external: bool
+
+class SovereigntyStatus(BaseModel):
+    timestamp: str
+    external_connections: int = 0
+    local_connections: int
+    internet_blocked: bool = True
+    firewall_status: str = "ACTIVE - ZERO EGRESS"
+    airgap_verification: str = "PASSED - LOCAL LOOPBACK ONLY"
+    active_services: List[Dict[str, Any]]
+    audit_hash: str
+
+class ForensicAuditReport(BaseModel):
+    report_id: str
+    timestamp: str
+    host_system: str
+    total_sockets_scanned: int
+    external_violations_detected: int = 0
+    loopback_verified: bool = True
+    sockets: List[SocketConnection]
+    integrity_signature_sha256: str
