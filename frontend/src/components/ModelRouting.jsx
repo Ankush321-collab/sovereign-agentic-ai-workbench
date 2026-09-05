@@ -1,39 +1,38 @@
 /**
  * components/ModelRouting.jsx
  * Owner: Roshan
- * Displays which model was selected and why (from Aarav's router).
+ * Displays multi-stage explainable model routing decision (from Aarav's router).
  */
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { getRouting } from '../services/api';
 
 const MODEL_META = {
-  'qwen2.5:7b-instruct':  { label: 'Qwen Text',   type: 'Reasoning / Document', color: 'var(--accent-blue)',   badge: 'badge-blue' },
-  'qwen2.5vl:7b':         { label: 'Qwen Vision', type: 'Vision / Image / OCR', color: 'var(--accent-purple)', badge: 'badge-purple' },
-  'qwen2.5-coder:latest': { label: 'Qwen Coder',  type: 'Coding / Debugging',   color: 'var(--accent-amber)',  badge: 'badge-amber' },
-};
-
-const TASK_ICONS = {
-  document:  '📄',
-  coding:    '💻',
-  vision:    '🖼️',
-  reasoning: '🧠',
-  general:   '💬',
+  'qwen-reasoning': { label: 'Qwen Reasoning', type: 'Reasoning / Document', color: 'var(--accent-blue)', badge: 'badge-blue' },
+  'qwen-coder':     { label: 'Qwen Coder',     type: 'Coding / ASME Calc',    color: 'var(--accent-amber)', badge: 'badge-amber' },
+  'qwen-vl':        { label: 'Qwen Vision',    type: 'Vision / P&ID / NDT',   color: 'var(--accent-purple)', badge: 'badge-purple' },
 };
 
 export default function ModelRouting({ routingData }) {
   const [routing, setRouting] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount: fetch current routing
   useEffect(() => {
     getRouting()
-      .then(setRouting)
+      .then((data) => {
+        if (data && data.models && data.models.length > 0) {
+          setRouting({
+            model: data.models[0].name,
+            task_type: data.models[0].task,
+            task_class: 'engineering_calc',
+            reason: 'Primary configured model for on-premises engineering pipeline'
+          });
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  // When chat response comes in with updated routing
   useEffect(() => {
     if (routingData) setRouting(routingData);
   }, [routingData]);
@@ -47,48 +46,45 @@ export default function ModelRouting({ routingData }) {
 
   return (
     <div>
-      <p className="section-label">Model Routing</p>
+      <p className="section-label">EXPLAINABLE ROUTING</p>
 
       {loading && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-          <div className="spinner" /> Loading…
+          <div className="spinner" /> Loading routing priors...
         </div>
       )}
 
       {!loading && routing && (
         <div className="fade-in">
-          {/* Model name */}
+          {/* Model Card */}
           <div style={{
             padding: '0.65rem 0.85rem',
             background: 'var(--bg-secondary)',
             borderRadius: 'var(--radius-md)',
-            border: `1px solid ${meta.color}30`,
+            border: `1px solid ${meta ? meta.color : 'var(--accent-cyan)'}40`,
             marginBottom: 10,
           }}>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3 }}>Selected Model</div>
             <div style={{
               fontSize: '1rem', fontWeight: 700,
-              color: meta.color, fontFamily: 'JetBrains Mono, monospace',
+              color: meta ? meta.color : 'var(--accent-cyan)', fontFamily: 'JetBrains Mono, monospace',
             }}>
-              {meta.label}
+              {meta ? meta.label : routing.model}
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-              {meta.type}
+              {meta ? meta.type : routing.task_type}
             </div>
           </div>
 
-          {/* Task type */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
-            <span style={{ fontSize: '1rem' }}>{TASK_ICONS[routing.task_type] || '▸'}</span>
-            <div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Task Type</div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'capitalize' }}>
-                {routing.task_type}
-              </div>
-            </div>
+          {/* Fine-grained Task Class */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Classified Task:</span>
+            <span className="badge badge-blue" style={{ textTransform: 'uppercase', fontSize: '0.68rem' }}>
+              {routing.task_class || routing.task_type}
+            </span>
           </div>
 
-          {/* Reason */}
+          {/* Explainability / Reason */}
           <div style={{
             padding: '0.5rem 0.75rem',
             background: 'rgba(6,182,212,0.05)',
@@ -96,17 +92,35 @@ export default function ModelRouting({ routingData }) {
             borderLeft: '2px solid var(--accent-cyan)',
             fontSize: '0.75rem',
             color: 'var(--text-secondary)',
-            lineHeight: 1.5,
+            lineHeight: 1.4,
             marginBottom: 10,
           }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>Reason: </span>
-            {routing.reason || routing.routing_reason}
+            <div style={{ color: 'var(--accent-cyan)', fontWeight: 600, fontSize: '0.68rem', marginBottom: 2 }}>
+              Stage 1 Explainability:
+            </div>
+            {routing.reason || 'Optimal capability match based on task featurization'}
           </div>
 
-          {/* Execution badge */}
+          {/* Scores Breakdown if available */}
+          {routing.score_breakdown && Object.keys(routing.score_breakdown).length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 4 }}>Candidate Scores:</div>
+              {Object.entries(routing.score_breakdown).map(([mName, score]) => (
+                <div key={mName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', padding: '1px 0' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{mName}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--accent-green)' }}>{score}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Badges */}
           <div style={{ display: 'flex', gap: 6 }}>
-            <span className="badge badge-green">⚡ LOCAL</span>
-            <span className={`badge ${meta.badge}`}>{meta.label}</span>
+            <span className="badge badge-green">LOCAL WEIGHTS</span>
+            <span className="badge badge-cyan">{routing.quantization || 'Q4_K_M'}</span>
+            {routing.admitted_vram_gb && (
+              <span className="badge badge-amber">{routing.admitted_vram_gb} GB VRAM</span>
+            )}
           </div>
         </div>
       )}

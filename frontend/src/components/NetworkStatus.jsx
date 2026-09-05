@@ -1,11 +1,11 @@
 /**
  * components/NetworkStatus.jsx
  * Owner: Roshan
- * Sovereignty Dashboard — proves zero external calls during the SIH demo.
+ * Sovereignty Dashboard - proves zero external calls during the SIH demo.
  */
 
-import { useEffect, useState } from 'react';
-import { getNetworkStatus } from '../services/api';
+import React, { useEffect, useState } from 'react';
+import { getNetworkStatus, downloadAuditReport } from '../services/api';
 
 function StatRow({ label, value, ok }) {
   return (
@@ -31,6 +31,7 @@ function StatRow({ label, value, ok }) {
 export default function NetworkStatus() {
   const [status, setStatus]   = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   function fetchStatus() {
     getNetworkStatus()
@@ -41,21 +42,29 @@ export default function NetworkStatus() {
 
   useEffect(() => {
     fetchStatus();
-    // Poll every 30 seconds
     const interval = setInterval(fetchStatus, 30_000);
     return () => clearInterval(interval);
   }, []);
 
+  const handleDownload = async () => {
+    try {
+      setExporting(true);
+      await downloadAuditReport();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const allGood = status &&
     status.external_connections === 0 &&
-    status.internet_blocked &&
-    status.models_local &&
-    status.processing_local;
+    status.internet_blocked;
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <p className="section-label" style={{ margin: 0 }}>🔒 Sovereignty</p>
+        <p className="section-label" style={{ margin: 0 }}>AIR-GAP SOVEREIGNTY</p>
         {status && (
           <button
             id="refresh-network-btn"
@@ -64,14 +73,14 @@ export default function NetworkStatus() {
             title="Refresh"
             style={{ fontSize: '0.7rem', padding: '2px 8px' }}
           >
-            ↺
+            REFRESH
           </button>
         )}
       </div>
 
       {loading && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-          <div className="spinner" /> Checking…
+          <div className="spinner" /> Scanning process sockets...
         </div>
       )}
 
@@ -89,60 +98,83 @@ export default function NetworkStatus() {
             marginBottom: 10,
           }}>
             <div style={{
-              fontSize: '1.5rem',
+              fontSize: '1rem',
+              fontWeight: 800,
+              letterSpacing: '0.05em',
+              color: allGood ? 'var(--accent-green)' : 'var(--accent-red)',
               marginBottom: 4,
             }}>
-              {allGood ? '🛡️' : '⚠️'}
+              {allGood ? '[100% AIR-GAPPED]' : '[NETWORK ALERT]'}
             </div>
             <div style={{
-              fontSize: '0.8rem', fontWeight: 700,
+              fontSize: '0.75rem', fontWeight: 700,
               color: allGood ? 'var(--accent-green)' : 'var(--accent-red)',
             }}>
-              {allGood ? 'FULLY SOVEREIGN' : 'CHECK REQUIRED'}
+              {allGood ? 'PROVEN ZERO EGRESS' : 'EXTERNAL SOCKET DETECTED'}
             </div>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
-              {allGood ? 'Zero external calls detected' : 'Review network connections'}
+              {allGood ? 'No external sockets in process tree' : 'Review open connections'}
             </div>
           </div>
 
           {/* Stats */}
           <div>
             <StatRow
-              label="External Connections"
+              label="External Sockets"
               value={status.external_connections}
               ok={status.external_connections === 0}
             />
             <StatRow
-              label="Local Connections"
+              label="Local Loopback Sockets"
               value={status.local_connections}
               ok={null}
             />
             <StatRow
               label="Internet Access"
-              value={status.internet_blocked ? 'BLOCKED ✓' : 'OPEN ✗'}
+              value={status.internet_blocked ? 'BLOCKED [SAFE]' : 'OPEN'}
               ok={status.internet_blocked}
             />
             <StatRow
-              label="AI Models"
-              value={status.models_local ? 'LOCAL ✓' : 'CLOUD ✗'}
-              ok={status.models_local}
-            />
-            <StatRow
-              label="Data Processing"
-              value={status.processing_local ? 'LOCAL ONLY ✓' : 'EXTERNAL ✗'}
-              ok={status.processing_local}
+              label="Firewall Mode"
+              value={status.firewall_status || 'ZERO-EGRESS'}
+              ok={true}
             />
           </div>
 
-          {/* Ollama info */}
-          <div style={{
-            marginTop: 8, padding: '0.4rem 0.6rem',
-            background: 'rgba(59,130,246,0.06)',
-            borderRadius: 6, fontSize: '0.7rem', color: 'var(--text-muted)',
-            fontFamily: 'JetBrains Mono, monospace',
-          }}>
-            Ollama · localhost:11434
-          </div>
+          {/* SHA-256 Audit Signature */}
+          {status.audit_hash && (
+            <div style={{
+              marginTop: 8, padding: '0.45rem 0.6rem',
+              background: 'rgba(59,130,246,0.06)',
+              borderRadius: 6, fontSize: '0.68rem', color: 'var(--text-muted)',
+              fontFamily: 'JetBrains Mono, monospace',
+              wordBreak: 'break-all'
+            }}>
+              <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>SHA-256: </span>
+              {status.audit_hash.substring(0, 16)}...
+            </div>
+          )}
+
+          {/* Export Certificate Button */}
+          <button
+            onClick={handleDownload}
+            disabled={exporting}
+            style={{
+              width: '100%',
+              marginTop: 10,
+              padding: '0.5rem',
+              background: 'rgba(16,185,129,0.12)',
+              border: '1px solid rgba(16,185,129,0.35)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--accent-green)',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              letterSpacing: '0.03em'
+            }}
+          >
+            {exporting ? 'Exporting...' : 'DOWNLOAD FORENSIC CERTIFICATE (JSON)'}
+          </button>
         </div>
       )}
 

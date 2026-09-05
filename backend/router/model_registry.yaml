@@ -1,27 +1,61 @@
 models:
-  reasoning:
-    name: qwen-reasoning
-    endpoint: http://localhost:11434
-    tasks:
-      - reasoning
-      - document
-      - general
-    enabled: true
-    is_default: true
-
   coding:
+    capabilities:
+    - engineering_calc
+    - python_sandbox_exec
+    - barlow_asme_math
+    - formula_verification
+    display_name: Qwen2.5 Coder 7B (Specialized Math & Code)
+    enabled: true
+    endpoint: http://localhost:11434
+    escalation_target: qwen2.5-coder-14b
+    id: qwen2.5-coder-7b
     name: qwen-coder
-    endpoint: http://localhost:11434
+    prior_score: 1.0
+    quant: q4_k_m
     tasks:
-      - coding
-      - debugging
+    - coding
+    - debugging
+    - engineering_calc
+    vram_gb: 5.8
+  reasoning:
+    capabilities:
+    - official_drafting
+    - statutory_sop_synthesis
+    - maker_checker_justification
+    - general_qa
+    display_name: Qwen2.5 7B Instruct (Air-Gapped Dense)
     enabled: true
-
+    endpoint: http://localhost:11434
+    escalation_target: deepseek-r1-distill-7b
+    id: qwen2.5-7b-reasoning
+    is_default: true
+    name: qwen-reasoning
+    prior_score: 1.0
+    quant: q4_k_m
+    tasks:
+    - reasoning
+    - document
+    - general
+    - official_drafting
+    vram_gb: 5.6
   vision:
-    name: qwen-vl
-    endpoint: http://localhost:11434
-    tasks:
-      - vision
-      - image
-      - document
+    capabilities:
+    - pid_symbol_detection
+    - isa_5_1_loop_extraction
+    - scanned_ndt_table_ocr
+    - provenance_bounding_boxes
+    display_name: Qwen2.5-VL Multimodal Specialist
     enabled: true
+    endpoint: http://localhost:11434
+    escalation_target: local_deterministic_fallback
+    id: qwen2.5-vl-7b
+    name: qwen-vl
+    prior_score: 1.0
+    quant: q4_k_m
+    tasks:
+    - vision
+    - image
+    - document
+    - pid_schematic
+    vram_gb: 6.2
