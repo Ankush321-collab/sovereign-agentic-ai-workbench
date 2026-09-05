@@ -124,7 +124,8 @@ export default function Chat({ onResponse, uploadedFile }) {
     setLoading(true);
 
     try {
-      const data = await sendChat(text, uploadedFile?.id || null);
+      const fileId = uploadedFile?.file_id || uploadedFile?.id || uploadedFile?.saved_as || null;
+      const data = await sendChat(text, fileId);
       const aiMsg = {
         id: Date.now() + 1,
         role: 'assistant',

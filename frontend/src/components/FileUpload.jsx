@@ -7,7 +7,7 @@
 import { useState, useRef } from 'react';
 import { uploadFile } from '../services/api';
 
-const ACCEPTED_TYPES = '.pdf,.png,.jpg,.jpeg,.docx,.xlsx,.txt';
+const ACCEPTED_TYPES = '.pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.txt';
 
 export default function FileUpload({ onUpload }) {
   const [dragging, setDragging]   = useState(false);
@@ -47,7 +47,7 @@ export default function FileUpload({ onUpload }) {
     if (name.endsWith('.pdf'))  return '📄';
     if (name.endsWith('.docx')) return '📝';
     if (name.endsWith('.xlsx')) return '📊';
-    if (name.match(/\.(png|jpg|jpeg)$/)) return '🖼️';
+    if (name.match(/\.(png|jpg|jpeg|webp)$/i)) return '🖼️';
     return '📁';
   }
 
@@ -98,7 +98,7 @@ export default function FileUpload({ onUpload }) {
               Drop a file here or click to browse
               <br />
               <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
-                PDF, PNG, DOCX, XLSX, TXT
+                PDF, PNG, JPG, WEBP, DOCX, XLSX, TXT
               </span>
             </div>
           </>

@@ -1,0 +1,49 @@
+# ==============================================================================
+# Sovereign AI Workbench — Frontend Dockerfile
+# Multi-Stage Build: Node.js 20 Vite Builder -> Nginx 1.25 Alpine Runner
+# ==============================================================================
+
+# ── Stage 1: Build Static Assets ──────────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies with cache optimization
+COPY frontend/package*.json ./
+RUN npm ci || npm install
+
+# Copy source code
+COPY frontend/ ./
+
+# Pass environment variables for production build
+# Setting VITE_API_URL="" tells the frontend to make relative requests,
+# which Nginx reverse-proxies to the backend container seamlessly without CORS.
+ARG VITE_API_URL=""
+ARG VITE_USE_MOCK="false"
+
+ENV VITE_API_URL=${VITE_API_URL} \
+    VITE_USE_MOCK=${VITE_USE_MOCK} \
+    NODE_ENV=production
+
+# Compile production bundle to /app/dist
+RUN npm run build
+
+# ── Stage 2: Serve with Nginx ─────────────────────────────────────────────────
+FROM nginx:1.25-alpine
+
+# Remove default static content
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy built application from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy custom Nginx reverse proxy configuration
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+# Health check to ensure Nginx is serving content
+HEALTHCHECK --interval=20s --timeout=3s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -13,7 +13,7 @@ class RouterService:
         """
         payload = {
             "query": query,
-            "has_image": bool(uploaded_file and uploaded_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))),
+            "has_image": bool(uploaded_file and uploaded_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp'))),
             "has_file": bool(uploaded_file)
         }
 
@@ -35,7 +35,7 @@ class RouterService:
         query_lower = query.lower()
         
         # Vision / P&ID tasks
-        if uploaded_file and uploaded_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.pdf')):
+        if uploaded_file and uploaded_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.pdf')):
             if "p&id" in query_lower or "diagram" in query_lower or "drawing" in query_lower:
                 return {
                     "task": "vision_pid",

@@ -10,11 +10,18 @@ Verifies that the Qwen text model (qwen2.5:7b-instruct) is:
 """
 
 import sys
+import io
 import json
 import time
 import requests
 import yaml
 from pathlib import Path
+
+# Force UTF-8 output on Windows to handle emoji/unicode in print()
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # ─── Load config ────────────────────────────────────────────────────────────
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "ollama_config.yaml"
@@ -116,5 +123,5 @@ if __name__ == "__main__":
     test_no_external_api()
 
     print("\n" + "=" * 60)
-    print("  All tests passed. Text model is ready. ✅")
+    print("  All tests passed. Text model is ready. [OK]")
     print("=" * 60)

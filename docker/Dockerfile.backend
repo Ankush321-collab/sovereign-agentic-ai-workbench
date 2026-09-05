@@ -1,0 +1,54 @@
+# ==============================================================================
+# Sovereign AI Workbench — Backend Dockerfile
+# Air-Gapped / On-Premise Multi-Model Agentic System
+# ==============================================================================
+
+FROM python:3.11-slim
+
+# Prevent Python from writing .pyc files and enable unbuffered output
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    HF_HUB_DISABLE_SYMLINKS_WARNING=1 \
+    ANONYMIZED_TELEMETRY=False \
+    CHROMA_TELEMETRY=False \
+    TOKENIZERS_PARALLELISM=false
+
+WORKDIR /app
+
+# Install essential system libraries:
+# - curl (for container healthcheck)
+# - tesseract-ocr & eng dataset (for OCR engine fallback)
+# - libgl1 & libglib2.0-0 (for OpenCV image processing)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies first for caching efficiency
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r /app/backend/requirements.txt
+
+# Copy codebase
+COPY backend /app/backend
+COPY config /app/config
+COPY multimodal /app/multimodal
+COPY docker/entrypoint.sh /app/entrypoint.sh
+
+# Ensure execution permissions on entrypoint and create data directories
+RUN chmod +x /app/entrypoint.sh && \
+    mkdir -p /app/data/uploads /app/data/outputs /app/data/knowledge
+
+EXPOSE 8000
+
+# Health check against root status endpoint
+HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/ || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]

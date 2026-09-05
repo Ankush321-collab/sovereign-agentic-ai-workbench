@@ -27,7 +27,7 @@ export default function GeneratedFiles({ newFiles }) {
 
   useEffect(() => {
     getFiles()
-      .then(setFiles)
+      .then((res) => setFiles(Array.isArray(res) ? res : []))
       .catch(() => setFiles([]))
       .finally(() => setLoading(false));
   }, []);

@@ -17,8 +17,27 @@ HOST = os.getenv("MULTIMODAL_HOST", "0.0.0.0")
 PORT = int(os.getenv("MULTIMODAL_PORT", "8003"))
 
 # Vision Model Configuration
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-VISION_MODEL = os.getenv("VISION_MODEL", "qwen2.5-vl")
+_ollama_base = os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_URL")
+_vision_model = os.getenv("VISION_MODEL")
+_config_path = PROJECT_ROOT / "config" / "ollama_config.yaml"
+if _config_path.exists():
+    try:
+        _txt = _config_path.read_text()
+        if not _ollama_base:
+            import re
+            m = re.search(r"base_url:\s*(\S+)", _txt)
+            if m:
+                _ollama_base = m.group(1).strip()
+        if not _vision_model:
+            import re
+            m2 = re.search(r"vision:\s*[\s\S]*?name:\s*(\S+)", _txt)
+            if m2:
+                _vision_model = m2.group(1).strip()
+    except Exception:
+        pass
+
+OLLAMA_BASE_URL = (_ollama_base or "http://localhost:11434").rstrip("/")
+VISION_MODEL = _vision_model or "qwen2.5vl:7b"
 VISION_ENDPOINT_FALLBACK = os.getenv("VISION_ENDPOINT_FALLBACK", "http://localhost:8003/v1")
 
 # OCR Engine Configuration
