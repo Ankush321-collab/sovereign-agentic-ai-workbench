@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 import logging
 from backend.config import OUTPUTS_DIR
 from backend.services.multimodal_service import MultimodalService

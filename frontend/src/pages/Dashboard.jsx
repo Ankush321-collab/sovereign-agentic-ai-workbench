@@ -1,154 +1,140 @@
+
 /**
- * pages/Dashboard.jsx
- * Owner: Roshan
- * Main layout: 3-column grid with Chat (left), sidebar panels (right).
+ * Dashboard.jsx  —  VAJRA Sovereign AI Workbench
+ * Layout: Left Sidebar | Chat Column | Right Panel
  */
-
-import { useState } from 'react';
-import Chat           from '../components/Chat';
-import FileUpload     from '../components/FileUpload';
-import AgentTrace     from '../components/AgentTrace';
-import ModelRouting   from '../components/ModelRouting';
-import Sources        from '../components/Sources';
+import { useState, useCallback } from 'react';
+import Chat from '../components/Chat';
+import FileUpload from '../components/FileUpload';
+import ModelRouting from '../components/ModelRouting';
+import AgentTrace from '../components/AgentTrace';
+import Sources from '../components/Sources';
 import GeneratedFiles from '../components/GeneratedFiles';
-import NetworkStatus  from '../components/NetworkStatus';
+import NetworkStatus from '../components/NetworkStatus';
 
-// ── Header ───────────────────────────────────────────────────────────────────
-function Header() {
-  return (
-    <header style={{
-      height: 56,
-      background: 'rgba(15,22,41,0.95)',
-      backdropFilter: 'blur(12px)',
-      borderBottom: '1px solid var(--border)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 1.5rem',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-    }}>
-      {/* Logo / title */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8,
-          background: 'linear-gradient(135deg,#3b82f6,#06b6d4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '1rem',
-        }}>
-          🛡️
-        </div>
-        <div>
-          <div style={{ fontSize: '0.9rem', fontWeight: 700, letterSpacing: '-0.01em' }}>
-            <span className="glow-text">Sovereign AI</span>{' '}
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>Workbench</span>
-          </div>
-          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.06em' }}>
-            SIH 2026 · TEAM QUANTA CODES
-          </div>
-        </div>
-      </div>
+const NAV = [
+  { id: 'chat',    label: 'Chat',         icon: '💬' },
+  { id: 'rag',     label: 'RAG Ingest',   icon: '📚' },
+  { id: 'audit',   label: 'Audit Logs',   icon: '🛡' },
+];
 
-      {/* Status pills */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <span className="badge badge-green">
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor' }} className="pulse" />
-          LOCAL AI
-        </span>
-        <span className="badge badge-cyan">OFFLINE SAFE</span>
-      </div>
-    </header>
-  );
-}
+const TABS = ['Model', 'Pipeline', 'Sources', 'Files', 'Network'];
 
-// ── Panel wrapper ─────────────────────────────────────────────────────────────
-function Panel({ children, style = {} }) {
-  return (
-    <div className="card" style={{ ...style }}>
-      {children}
-    </div>
-  );
-}
-
-// ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const [uploadedFile,  setUploadedFile]  = useState(null);
-  const [agentTrace,    setAgentTrace]    = useState(null);
-  const [routingData,   setRoutingData]   = useState(null);
-  const [ragSources,    setRagSources]    = useState([]);
-  const [generatedFiles, setGeneratedFiles] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [panelOpen,   setPanelOpen]   = useState(true);
+  const [activeNav,   setActiveNav]   = useState('chat');
+  const [activeTab,   setActiveTab]   = useState('Model');
 
-  function handleChatResponse(data) {
-    if (data.trace)   setAgentTrace(data.trace);
-    if (data.sources) setRagSources(data.sources);
-    if (data.files)   setGeneratedFiles(data.files);
-    if (data.model || data.task_type) {
-      setRoutingData({
-        model:        data.model,
-        task_type:    data.task_type,
-        reason:       data.routing_reason,
-        execution:    'LOCAL',
-      });
-    }
-  }
+  // Lifted state from Chat responses
+  const [routingData,    setRoutingData]    = useState(null);
+  const [agentTrace,     setAgentTrace]     = useState([]);
+  const [ragSources,     setRagSources]     = useState([]);
+  const [generatedFiles, setGeneratedFiles] = useState([]);
+  const [uploadedFile,   setUploadedFile]   = useState(null);
+  const [networkOk,      setNetworkOk]      = useState(true);
+
+  const onChatResponse = useCallback((data) => {
+    if (data.routing)       setRoutingData(data.routing);
+    if (data.trace)         setAgentTrace(data.trace);
+    if (data.sources)       setRagSources(data.sources);
+    if (data.files)         setGeneratedFiles(data.files);
+    // Auto-switch panel tab to Pipeline after response
+    setActiveTab('Pipeline');
+  }, []);
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
-      <Header />
-
-      <main style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 300px',
-        gridTemplateRows: 'auto',
-        gap: '1rem',
-        padding: '1rem 1.25rem',
-        maxWidth: 1400,
-        margin: '0 auto',
-        height: 'calc(100vh - 56px)',
-        boxSizing: 'border-box',
-      }}>
-
-        {/* ── Left column: Chat ─────────────────────────── */}
-        <Panel style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
-          <Chat onResponse={handleChatResponse} uploadedFile={uploadedFile} />
-        </Panel>
-
-        {/* ── Right column: Sidebar panels ──────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', overflowY: 'auto' }}>
-
-          {/* File Upload */}
-          <Panel>
-            <FileUpload onUpload={setUploadedFile} />
-          </Panel>
-
-          {/* Model Routing */}
-          <Panel>
-            <ModelRouting routingData={routingData} />
-          </Panel>
-
-          {/* Agent Trace */}
-          <Panel>
-            <AgentTrace trace={agentTrace} />
-          </Panel>
-
-          {/* RAG Sources */}
-          <Panel>
-            <Sources sources={ragSources} />
-          </Panel>
-
-          {/* Generated Files */}
-          <Panel>
-            <GeneratedFiles newFiles={generatedFiles} />
-          </Panel>
-
-          {/* Network Status */}
-          <Panel>
-            <NetworkStatus />
-          </Panel>
-
+    <div className="app-shell">
+      {/* ── Sidebar ──────────────────────────────────────────── */}
+      <aside className={`sidebar${sidebarOpen ? '' : ' hidden'}`}>
+        <div className="sidebar-header">
+          <div className="sidebar-logo">VJ</div>
+          <div className="sidebar-brand">
+            VAJRA<small>Sovereign AI · SIH 2026</small>
+          </div>
         </div>
-      </main>
+        <div className="sidebar-body">
+          <div className="sidebar-sep">Workspace</div>
+          {NAV.map(n => (
+            <button
+              key={n.id}
+              className={`nav-btn${activeNav === n.id ? ' active' : ''}`}
+              onClick={() => setActiveNav(n.id)}
+            >
+              <span className="nav-icon">{n.icon}</span>
+              {n.label}
+            </button>
+          ))}
+
+          <div className="sidebar-sep" style={{ marginTop: 8 }}>Upload</div>
+          <FileUpload onUpload={setUploadedFile} compact />
+        </div>
+
+        <div className="sidebar-footer">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px' }}>
+            <div className={`dot dot-${networkOk ? 'green' : 'red'}`} />
+            <span style={{ fontSize: '.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              {networkOk ? '100% Air-Gapped' : 'Network Alert'}
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Main area ────────────────────────────────────────── */}
+      <div className="main-col">
+        {/* Topbar */}
+        <header className="topbar">
+          <button className="topbar-btn" onClick={() => setSidebarOpen(v => !v)} title="Toggle sidebar">
+            ☰
+          </button>
+          <span className="topbar-title">
+            {activeNav === 'chat'  && 'Agentic Chat'}
+            {activeNav === 'rag'   && 'RAG Knowledge Base'}
+            {activeNav === 'audit' && 'Audit Logs'}
+          </span>
+          <div className="topbar-right">
+            <div className={`dot dot-${networkOk ? 'green' : 'red'}`} />
+            <span className="topbar-label">AIR-GAPPED</span>
+            <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
+            <button className="topbar-btn" onClick={() => setPanelOpen(v => !v)} title="Toggle panel" style={{ fontSize: '14px' }}>
+              ⊞
+            </button>
+          </div>
+        </header>
+
+        {/* Content */}
+        <div className="content-row">
+          <div className="chat-col">
+            <Chat
+              onResponse={onChatResponse}
+              uploadedFile={uploadedFile}
+              onClearFile={() => setUploadedFile(null)}
+            />
+          </div>
+
+          {/* ── Right Panel ───────────────────────────────────── */}
+          <aside className={`right-col${panelOpen ? '' : ' hidden'}`}>
+            <div className="ptabs">
+              {TABS.map(t => (
+                <button
+                  key={t}
+                  className={`ptab${activeTab === t ? ' on' : ''}`}
+                  onClick={() => setActiveTab(t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <div className="pbody">
+              {activeTab === 'Model'    && <ModelRouting routingData={routingData} />}
+              {activeTab === 'Pipeline' && <AgentTrace   trace={agentTrace} />}
+              {activeTab === 'Sources'  && <Sources      sources={ragSources} />}
+              {activeTab === 'Files'    && <GeneratedFiles newFiles={generatedFiles} />}
+              {activeTab === 'Network'  && <NetworkStatus onStatusChange={setNetworkOk} />}
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

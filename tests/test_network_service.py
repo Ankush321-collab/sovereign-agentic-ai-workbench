@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 import hashlib
 from backend.services.network_service import NetworkService
 

@@ -1,133 +1,105 @@
-/**
- * components/ModelRouting.jsx
- * Owner: Roshan
- * Displays multi-stage explainable model routing decision (from Aarav's router).
- */
 
-import React, { useEffect, useState } from 'react';
-import { getRouting } from '../services/api';
+import { useEffect, useState } from 'react';
+import { getModels } from '../services/api';
 
-const MODEL_META = {
-  'qwen-reasoning': { label: 'Qwen Reasoning', type: 'Reasoning / Document', color: 'var(--accent-blue)', badge: 'badge-blue' },
-  'qwen-coder':     { label: 'Qwen Coder',     type: 'Coding / ASME Calc',    color: 'var(--accent-amber)', badge: 'badge-amber' },
-  'qwen-vl':        { label: 'Qwen Vision',    type: 'Vision / P&ID / NDT',   color: 'var(--accent-purple)', badge: 'badge-purple' },
+const TASK_COLORS = {
+  reasoning: 'var(--blue)',
+  coding:    'var(--cyan)',
+  vision:    'var(--purple)',
+  document:  'var(--green)',
+  general:   'var(--amber)',
 };
 
+function ScoreBar({ label, val, color }) {
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.67rem', color: 'var(--text-muted)', marginBottom: 3 }}>
+        <span>{label}</span>
+        <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{typeof val === 'number' ? val.toFixed(2) : val}</span>
+      </div>
+      <div className="progress-track">
+        <div className="progress-fill" style={{ width: `${Math.min((val||0)*100, 100)}%`, background: color || 'var(--blue)' }} />
+      </div>
+    </div>
+  );
+}
+
 export default function ModelRouting({ routingData }) {
-  const [routing, setRouting] = useState(null);
+  const [models,  setModels]  = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getRouting()
-      .then((data) => {
-        if (data && data.models && data.models.length > 0) {
-          setRouting({
-            model: data.models[0].name,
-            task_type: data.models[0].task,
-            task_class: 'engineering_calc',
-            reason: 'Primary configured model for on-premises engineering pipeline'
-          });
-        }
-      })
+    getModels()
+      .then(d => setModels(Array.isArray(d?.models) ? d.models : Array.isArray(d) ? d : []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (routingData) setRouting(routingData);
-  }, [routingData]);
-
-  const meta = routing ? (MODEL_META[routing.model] || {
-    label: routing.model,
-    type: routing.task_type,
-    color: 'var(--accent-cyan)',
-    badge: 'badge-cyan',
-  }) : null;
+  const active = routingData;
+  const accentColor = active ? (TASK_COLORS[active.task] || TASK_COLORS[active.task_type] || 'var(--blue)') : 'var(--blue)';
 
   return (
-    <div>
-      <p className="section-label">EXPLAINABLE ROUTING</p>
-
-      {loading && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-          <div className="spinner" /> Loading routing priors...
-        </div>
-      )}
-
-      {!loading && routing && (
-        <div className="fade-in">
-          {/* Model Card */}
-          <div style={{
-            padding: '0.65rem 0.85rem',
-            background: 'var(--bg-secondary)',
-            borderRadius: 'var(--radius-md)',
-            border: `1px solid ${meta ? meta.color : 'var(--accent-cyan)'}40`,
-            marginBottom: 10,
-          }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3 }}>Selected Model</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Active routing card */}
+      {active ? (
+        <div className="mcard fade-in" style={{ borderColor: `${accentColor}40` }}>
+          <div style={{ fontSize: '.63rem', color: 'var(--text-muted)', marginBottom: 4 }}>SELECTED MODEL</div>
+          <div className="mcard-name" style={{ color: accentColor }}>{active.model}</div>
+          <div className="mcard-sub">{active.task || active.task_type || 'general'}</div>
+          <div className="mcard-badges">
+            <span className="badge b-green">LOCAL</span>
+            {active.quantization && <span className="badge b-cyan">{active.quantization}</span>}
+            {active.admitted_vram_gb && <span className="badge b-amber">{active.admitted_vram_gb} GB VRAM</span>}
+          </div>
+          {active.reason && (
             <div style={{
-              fontSize: '1rem', fontWeight: 700,
-              color: meta ? meta.color : 'var(--accent-cyan)', fontFamily: 'JetBrains Mono, monospace',
+              marginTop: 10, padding: '8px 10px',
+              background: 'var(--bg-base)', borderRadius: 'var(--r-md)',
+              fontSize: '.72rem', color: 'var(--text-secondary)', lineHeight: 1.6,
+              borderLeft: `2px solid ${accentColor}`,
             }}>
-              {meta ? meta.label : routing.model}
+              {active.reason}
             </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-              {meta ? meta.type : routing.task_type}
-            </div>
-          </div>
-
-          {/* Fine-grained Task Class */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Classified Task:</span>
-            <span className="badge badge-blue" style={{ textTransform: 'uppercase', fontSize: '0.68rem' }}>
-              {routing.task_class || routing.task_type}
-            </span>
-          </div>
-
-          {/* Explainability / Reason */}
-          <div style={{
-            padding: '0.5rem 0.75rem',
-            background: 'rgba(6,182,212,0.05)',
-            borderRadius: 6,
-            borderLeft: '2px solid var(--accent-cyan)',
-            fontSize: '0.75rem',
-            color: 'var(--text-secondary)',
-            lineHeight: 1.4,
-            marginBottom: 10,
-          }}>
-            <div style={{ color: 'var(--accent-cyan)', fontWeight: 600, fontSize: '0.68rem', marginBottom: 2 }}>
-              Stage 1 Explainability:
-            </div>
-            {routing.reason || 'Optimal capability match based on task featurization'}
-          </div>
-
-          {/* Scores Breakdown if available */}
-          {routing.score_breakdown && Object.keys(routing.score_breakdown).length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 4 }}>Candidate Scores:</div>
-              {Object.entries(routing.score_breakdown).map(([mName, score]) => (
-                <div key={mName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', padding: '1px 0' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>{mName}</span>
-                  <span style={{ fontWeight: 600, color: 'var(--accent-green)' }}>{score}</span>
-                </div>
+          )}
+          {active.score_breakdown && Object.keys(active.score_breakdown).length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: '.63rem', color: 'var(--text-muted)', marginBottom: 8, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase' }}>Candidate Scores</div>
+              {Object.entries(active.score_breakdown).map(([k, v]) => (
+                <ScoreBar key={k} label={k} val={v} color={accentColor} />
               ))}
             </div>
           )}
-
-          {/* Badges */}
-          <div style={{ display: 'flex', gap: 6 }}>
-            <span className="badge badge-green">LOCAL WEIGHTS</span>
-            <span className="badge badge-cyan">{routing.quantization || 'Q4_K_M'}</span>
-            {routing.admitted_vram_gb && (
-              <span className="badge badge-amber">{routing.admitted_vram_gb} GB VRAM</span>
-            )}
-          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: '.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>
+          Send a message to see routing decision
         </div>
       )}
 
-      {!loading && !routing && (
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          No routing data yet. Send a message to see the routing decision.
+      {/* Registered models list */}
+      {loading ? (
+        <div style={{ display: 'flex', gap: 7, alignItems: 'center', color: 'var(--text-muted)', fontSize: '.78rem' }}>
+          <div className="spinner" /> Loading registry…
+        </div>
+      ) : models.length > 0 && (
+        <div>
+          <div className="card-head">Registry</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {models.map((m, i) => {
+              const col = TASK_COLORS[m.task] || 'var(--blue)';
+              return (
+                <div key={i} className="mcard" style={{ padding: '8px 10px', borderColor: `${col}28` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="mcard-name" style={{ fontSize: '.78rem', color: col }}>{m.name || m.id}</div>
+                    <span className={`badge ${m.healthy || m.enabled ? 'b-green' : 'b-red'}`}>
+                      {m.healthy || m.enabled ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="mcard-sub">{m.task} · {m.quant || 'q4_k_m'}</div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

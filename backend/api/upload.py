@@ -1,31 +1,29 @@
+
 from fastapi import APIRouter, UploadFile, File, HTTPException
-import shutil
-import uuid
+import shutil, uuid
 from pathlib import Path
 from backend.config import UPLOADS_DIR
 
 router = APIRouter(tags=["Upload"])
 
+@router.post("/api/upload")
 @router.post("/upload")
 async def upload_file_endpoint(file: UploadFile = File(...)):
     """
-    File Upload Endpoint.
-    Saves uploaded document/image to data/uploads and returns metadata.
+    File Upload. Returns {file_id, name, size} for frontend FileUpload.jsx.
     """
     try:
-        file_ext = Path(file.filename).suffix
-        unique_name = f"{uuid.uuid4().hex[:8]}_{file.filename}"
-        dest_path = UPLOADS_DIR / unique_name
-
-        with open(dest_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
+        uid  = uuid.uuid4().hex[:8]
+        name = f"{uid}_{file.filename}"
+        dest = UPLOADS_DIR / name
+        with open(dest, "wb") as buf:
+            shutil.copyfileobj(file.file, buf)
         return {
-            "success": True,
-            "file_id": str(dest_path),
-            "filename": file.filename,
-            "saved_as": unique_name,
-            "size": dest_path.stat().st_size
+            "success":  True,
+            "file_id":  str(dest),
+            "name":     file.filename,
+            "saved_as": name,
+            "size":     dest.stat().st_size,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

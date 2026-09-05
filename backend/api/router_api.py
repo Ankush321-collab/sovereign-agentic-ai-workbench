@@ -1,34 +1,52 @@
 from fastapi import APIRouter
-from backend.agent.state import RouteRequest, RouteResponse
+from backend.router.schemas import RouteRequest, RouteResponse, ModelListResponse
+from backend.router.router import ModelRouter
 from backend.services.router_service import RouterService
 
-router = APIRouter(tags=["Router"])
+router = APIRouter(prefix="/api/router", tags=["Router"])
+
+# Singleton router instance
+_model_router = ModelRouter()
 
 @router.post("/route", response_model=RouteResponse)
 async def route_query_endpoint(request: RouteRequest):
     """
-    Direct Model Routing Endpoint.
+    Direct Model Routing Endpoint with multi-stage explainable scoring.
+    Returns task_class, feature_vector, score_breakdown, admitted_vram_gb.
     """
-    res = await RouterService.route_task(
-        query=request.query,
-        uploaded_file="sample_image.png" if request.has_image else None
-    )
-    return RouteResponse(
-        task=res.get("task", "general"),
-        model=res.get("model", "Sarvam-30B"),
-        endpoint=res.get("endpoint", "http://localhost:8001"),
-        reason=res.get("reason", "Rule based routing")
-    )
+    response = _model_router.route(request)
+    return response
+
+@router.get("/models", response_model=ModelListResponse)
+async def get_models_endpoint():
+    """
+    Returns all registered models with health status, VRAM, and quantization.
+    Used by frontend ModelRouting.jsx component.
+    """
+    return _model_router.get_models()
+
+@router.get("/history")
+async def get_routing_history():
+    """
+    Returns routing history for audit and debugging.
+    """
+    return _model_router.get_history()
 
 @router.get("/routing")
 async def get_routing_info():
     """
-    Gets model routing configuration and registry status.
+    Legacy endpoint - returns simplified routing configuration.
+    Kept for backward compatibility with existing frontend components.
     """
+    models = _model_router.get_models()
     return {
         "active_models": [
-            {"task": "reasoning", "model": "Sarvam-30B", "status": "ONLINE", "endpoint": "http://localhost:8001"},
-            {"task": "coding", "model": "Qwen2.5-Coder", "status": "ONLINE", "endpoint": "http://localhost:8002"},
-            {"task": "vision", "model": "Qwen2.5-VL", "status": "ONLINE", "endpoint": "http://localhost:8003"}
+            {
+                "task": m.task,
+                "model": m.name,
+                "status": "ONLINE" if m.healthy else "OFFLINE",
+                "endpoint": m.endpoint or "http://localhost:11434"
+            }
+            for m in models.models
         ]
     }

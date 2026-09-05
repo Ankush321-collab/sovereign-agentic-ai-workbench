@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from pathlib import Path
 import docx
 from backend.tools.psu_note_generator import generate_psu_approval_note

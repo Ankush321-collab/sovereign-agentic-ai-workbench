@@ -1,227 +1,182 @@
+
 /**
- * components/Chat.jsx
- * Owner: Roshan
- * Chat interface — send messages, optionally attach files, see AI responses.
+ * Chat.jsx  —  Main conversational interface
+ * Sends messages, shows typing indicator, lifts state to Dashboard
  */
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { runAgent, routeQuery } from '../services/api';
 
-import { useState, useRef, useEffect } from 'react';
-import { sendChat } from '../services/api';
+const SUGGESTIONS = [
+  'Calculate pipe wall thickness per ASME B31.3',
+  'Draft a PSU approval note for valve replacement',
+  'Analyse the uploaded P&ID drawing',
+  'Compare SOP compliance for HPCL shutdown procedure',
+];
 
-const WELCOME_MESSAGE = {
-  id: 0,
-  role: 'assistant',
-  content:
-    'Welcome to Sovereign AI Workbench. All processing happens locally — no data leaves your environment. Upload a document or type a question to begin.',
-  model: null,
-  timestamp: new Date(),
-};
-
-function MessageBubble({ msg }) {
-  const isUser = msg.role === 'user';
-  return (
-    <div
-      className="fade-in"
-      style={{
-        display: 'flex',
-        justifyContent: isUser ? 'flex-end' : 'flex-start',
-        marginBottom: '0.75rem',
-      }}
-    >
-      {!isUser && (
-        <div style={{
-          width: 28, height: 28, borderRadius: '50%',
-          background: 'linear-gradient(135deg,#3b82f6,#06b6d4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.75rem', fontWeight: 700, flexShrink: 0,
-          marginRight: '0.5rem', marginTop: 2,
-        }}>
-          AI
-        </div>
-      )}
-      <div style={{
-        maxWidth: '80%',
-        padding: '0.65rem 1rem',
-        borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-        background: isUser
-          ? 'linear-gradient(135deg,#3b82f6,#2563eb)'
-          : 'var(--bg-card)',
-        border: isUser ? 'none' : '1px solid var(--border)',
-        fontSize: '0.875rem',
-        lineHeight: 1.6,
-        color: isUser ? '#fff' : 'var(--text-primary)',
-      }}>
-        {msg.file && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            marginBottom: 6, padding: '4px 8px',
-            background: 'rgba(255,255,255,0.08)',
-            borderRadius: 6, fontSize: '0.75rem', color: '#94a3b8',
-          }}>
-            <span>📎</span> {msg.file}
-          </div>
-        )}
-        <span>{msg.content}</span>
-        {msg.model && (
-          <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#475569' }}>
-            {msg.model}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+function fmtTime(d) {
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
-function TypingIndicator() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.75rem' }}>
-      <div style={{
-        width: 28, height: 28, borderRadius: '50%',
-        background: 'linear-gradient(135deg,#3b82f6,#06b6d4)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '0.75rem', fontWeight: 700,
-      }}>AI</div>
-      <div style={{
-        padding: '0.65rem 1rem', borderRadius: '16px 16px 16px 4px',
-        background: 'var(--bg-card)', border: '1px solid var(--border)',
-        display: 'flex', gap: 4, alignItems: 'center',
-      }}>
-        {[0, 0.2, 0.4].map((delay, i) => (
-          <div key={i} style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: 'var(--accent-cyan)',
-            animation: `pulse-dot 1.2s ease-in-out ${delay}s infinite`,
-          }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export default function Chat({ onResponse, uploadedFile }) {
-  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
-  const [input, setInput]       = useState('');
-  const [loading, setLoading]   = useState(false);
-  const bottomRef = useRef(null);
+export default function Chat({ onResponse, uploadedFile, onClearFile }) {
+  const [messages, setMessages] = useState([]);
+  const [input,    setInput]    = useState('');
+  const [loading,  setLoading]  = useState(false);
+  const bottomRef  = useRef(null);
   const textareaRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || loading) return;
+  // Auto-resize textarea
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 180) + 'px';
+  }, [input]);
 
-    const userMsg = {
-      id: Date.now(),
-      role: 'user',
-      content: text,
-      file: uploadedFile?.name || null,
-      timestamp: new Date(),
-    };
-    setMessages((m) => [...m, userMsg]);
+  const send = useCallback(async (text) => {
+    const query = (text || input).trim();
+    if (!query || loading) return;
     setInput('');
+
+    const userMsg = { role: 'user', text: query, ts: new Date() };
+    setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
     try {
-      const fileId = uploadedFile?.file_id || uploadedFile?.id || uploadedFile?.saved_as || null;
-      const data = await sendChat(text, fileId);
+      const data = await runAgent(query, uploadedFile?.file_id ?? null);
+
+      // Derive display text from response
+      const answer = data.answer
+        ?? data.response
+        ?? data.final_response
+        ?? data.output
+        ?? 'Task completed. Check the Pipeline tab for execution trace.';
+
+      // Extract routing from response if available
+      const routingRes = data.routing ?? data.route ?? null;
+      const modelName  = data.selected_model ?? routingRes?.model ?? 'Qwen2.5-7B';
+
       const aiMsg = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: data.response,
-        model: data.model,
-        timestamp: new Date(),
+        role:  'ai',
+        text:  answer,
+        ts:    new Date(),
+        model: modelName,
       };
-      setMessages((m) => [...m, aiMsg]);
-      if (onResponse) onResponse(data);
+      setMessages(prev => [...prev, aiMsg]);
+
+      // Lift data to Dashboard
+      if (onResponse) onResponse({
+        routing: routingRes ?? { model: modelName, task: data.task_class ?? 'general', reason: data.routing_reason ?? '' },
+        trace:   data.audit_log ?? data.trace ?? [],
+        sources: data.sources   ?? [],
+        files:   data.generated_files ?? data.files ?? [],
+      });
     } catch (err) {
-      setMessages((m) => [...m, {
-        id: Date.now() + 1, role: 'assistant',
-        content: `Error: ${err.message}. Make sure the backend is running.`,
-        timestamp: new Date(),
-      }]);
+      const errMsg = { role: 'ai', text: `⚠️ ${err.message}`, ts: new Date(), isError: true };
+      setMessages(prev => [...prev, errMsg]);
     } finally {
       setLoading(false);
     }
-  }
+  }, [input, loading, uploadedFile, onResponse]);
 
-  function handleKeyDown(e) {
+  const onKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      send();
     }
-  }
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header */}
-      <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: 'var(--accent-green)',
-          }} className="pulse" />
-          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-            CHAT — LOCAL AI
-          </span>
-        </div>
-      </div>
+    <>
+      <div className="chat-msgs" id="chat-messages">
+        <div className="chat-msgs-inner">
+          {messages.length === 0 && !loading && (
+            <div className="chat-welcome">
+              <div className="welcome-icon">🛡</div>
+              <div className="welcome-title">VAJRA Sovereign AI Workbench</div>
+              <div className="welcome-sub">
+                100% air-gapped · All computation on-premises · No external egress
+              </div>
+              <div className="chips">
+                {SUGGESTIONS.map((s, i) => (
+                  <button key={i} className="chip" onClick={() => send(s)}>{s}</button>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
-        {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
-        {loading && <TypingIndicator />}
-        <div ref={bottomRef} />
+          {messages.map((m, i) => (
+            <div key={i} className={`msg-row ${m.role}`}>
+              <div className={`msg-avatar ${m.role === 'user' ? 'av-user' : 'av-ai'}`}>
+                {m.role === 'user' ? 'U' : 'VJ'}
+              </div>
+              <div className="msg-body">
+                <div className={`msg-text${m.isError ? ' error' : ''}`}
+                  style={m.isError ? { borderColor: 'rgba(239,68,68,.3)', color: 'var(--red)' } : {}}
+                >
+                  {m.text}
+                </div>
+                <div className="msg-meta">
+                  <span>{fmtTime(m.ts)}</span>
+                  {m.model && <span className="model-pill">{m.model}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="msg-row ai">
+              <div className="msg-avatar av-ai">VJ</div>
+              <div className="msg-body">
+                <div className="typing">
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* Input */}
-      <div style={{ padding: '0.75rem', borderTop: '1px solid var(--border)' }}>
-        {uploadedFile && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            marginBottom: 6, padding: '4px 10px',
-            background: 'rgba(59,130,246,0.1)', borderRadius: 6,
-            fontSize: '0.75rem', color: 'var(--accent-blue)',
-            border: '1px solid rgba(59,130,246,0.2)',
-          }}>
-            <span>📎</span> {uploadedFile.name}
+      <div className="input-wrap">
+        <div className="input-inner">
+          <div className="input-box">
+            <textarea
+              ref={textareaRef}
+              id="chat-input"
+              rows={1}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={onKey}
+              placeholder="Ask anything… (Shift+Enter for newline)"
+              disabled={loading}
+            />
+            <div className="input-toolbar">
+              <button className={`icon-btn send-btn`} onClick={() => send()} disabled={!input.trim() || loading} title="Send">
+                {loading ? <div className="spinner" /> : '↑'}
+              </button>
+            </div>
           </div>
-        )}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <textarea
-            ref={textareaRef}
-            id="chat-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything... (Enter to send, Shift+Enter for newline)"
-            rows={2}
-            style={{
-              flex: 1,
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              color: 'var(--text-primary)',
-              padding: '0.6rem 0.8rem',
-              fontSize: '0.875rem',
-              resize: 'none',
-              outline: 'none',
-              fontFamily: 'inherit',
-              lineHeight: 1.5,
-            }}
-          />
-          <button
-            id="chat-send-btn"
-            className="btn btn-primary"
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            style={{ alignSelf: 'flex-end', minWidth: 72 }}
-          >
-            {loading ? <div className="spinner" /> : '↑ Send'}
-          </button>
+          <div className="input-foot">
+            <span className="input-hint">
+              Powered by local Ollama models · Zero external egress guaranteed
+            </span>
+            {uploadedFile && (
+              <div className="file-pill">
+                📎 {uploadedFile.name || uploadedFile.file_id}
+                <span className="file-pill-x" onClick={onClearFile}>✕</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -4,6 +4,7 @@ from backend.agent.graph import run_agent
 
 router = APIRouter(tags=["Chat"])
 
+@router.post("/api/chat", response_model=ChatResponse)
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """

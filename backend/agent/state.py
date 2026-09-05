@@ -1,4 +1,4 @@
-﻿from typing import TypedDict, List, Optional, Any, Dict
+from typing import TypedDict, List, Optional, Any, Dict
 from pydantic import BaseModel, Field
 
 class ThicknessReading(BaseModel):
@@ -71,24 +71,9 @@ class ChatResponse(BaseModel):
     files: List[str] = Field(default_factory=list)
     trace: List[Dict[str, Any]] = Field(default_factory=list)
 
-class RouteRequest(BaseModel):
-    query: str
-    has_image: bool = False
-    has_file: bool = False
 
-class RouteResponse(BaseModel):
-    task: str
-    model: str
-    endpoint: str
-    reason: str
 
-class NetworkStatusResponse(BaseModel):
-    external_connections: int = 0
-    local_connections: int = 4
-    internet_blocked: bool = True
 
-class RAGSearchRequest(BaseModel):
-    query: str
 
 class MultimodalProcessRequest(BaseModel):
     file_path: str

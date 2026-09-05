@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import psutil
 import socket
 import os
@@ -172,3 +172,20 @@ class NetworkService:
     @staticmethod
     def get_network_status() -> Dict[str, Any]:
         return NetworkService.get_sovereignty_status()
+
+    @classmethod
+    def get_forensic_report(cls) -> "ForensicReport":
+        """Alias for generate_forensic_audit() returning a dict-compatible object."""
+        data = cls.generate_forensic_audit()
+
+        class ForensicReport:
+            def __init__(self, d):
+                self.integrity_signature_sha256 = d.get("integrity_signature_sha256", "")
+                self.report_id = d.get("report_id", "")
+                self.timestamp = d.get("timestamp", "")
+                self._data = d
+            def dict(self):
+                return self._data
+
+        return ForensicReport(data)
+

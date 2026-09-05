@@ -1,4 +1,4 @@
-﻿from typing import Callable, Dict, Any
+from typing import Callable, Dict, Any
 from backend.tools.file_tool import read_file, write_file
 from backend.tools.code_tool import run_code
 from backend.tools.document_tool import generate_docx, generate_pptx, edit_spreadsheet, ocr_document

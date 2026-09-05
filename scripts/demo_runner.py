@@ -1,4 +1,4 @@
-﻿"""
+"""
 VAJRA // Sovereign AI Workbench — SIH 2026 End-to-End Demonstration Runner
 Team: Quanta Codes | Problem Statement: 26117
 

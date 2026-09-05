@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from backend.tools.code_tool import run_code
 
 def test_barlow_calculation_sandbox():

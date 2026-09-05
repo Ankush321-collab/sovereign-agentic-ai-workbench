@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from backend.services.network_service import NetworkService
 
