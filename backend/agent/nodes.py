@@ -55,123 +55,142 @@ async def router_node(state: AgentState) -> AgentState:
     )
     return state
 
-async def tool_selector_node(state: AgentState) -> AgentState:
-    """Node 3: Tool Selector Node - Dynamically selects RAG, OCR, Math Sandbox, and Deliverable tools."""
-    query = state.get("user_query", "").lower()
-    uploaded_file = state.get("uploaded_file")
-    tool_calls = state.get("tool_calls", [])
+from backend.tools.file_tool import auto_detect_relevant_files, read_file, write_file
+from backend.config import KNOWLEDGE_DIR, DATA_DIR, UPLOADS_DIR
+import json
+import re
 
-    # 1. Sovereign RAG retrieval from local SOPs and engineering standards
-    rag_results = await RAGService.search_knowledge_base(state.get("user_query", ""))
+async def _plan_tools_with_local_llm(query: str, selected_model: str, task_type: str, uploaded_file: str | None = None) -> List[Dict[str, Any]]:
+    """
+    Asks the local Ollama LLM to autonomously plan and select tools, generate code, and construct payloads.
+    Returns a list of tool call dicts: [{'tool': 'write_file', 'args': {...}}, ...]
+    """
+    # 1. Discover all workspace files so LLM knows what exists to read
+    available_files = []
+    for d in [KNOWLEDGE_DIR, DATA_DIR / "sample_documents", UPLOADS_DIR]:
+        if d.exists():
+            for f in d.glob("*.*"):
+                if f.is_file() and not f.name.startswith("."):
+                    available_files.append(f.name)
+
+    files_list_str = ", ".join(available_files[:30]) if available_files else "None"
+
+    # Select best model for tool planning / code generation
+    model_name = "qwen2.5-coder:latest" if ("code" in query.lower() or ".py" in query.lower() or task_type == "coding") else "qwen2.5:7b-instruct"
+
+    system_prompt = (
+        "You are Sovereign AI Workbench, an autonomous agent orchestrator with access to local tools.\n"
+        "Your task is to analyze the user request and decide which tools (if any) to invoke.\n\n"
+        "Available Tools:\n"
+        f"1. read_file(file_path): Read an existing workspace file. Available files: [{files_list_str}]\n"
+        "2. write_file(file_path, content): Create or save a file with the generated code or text (e.g. .py, .txt, .json, .csv, .md).\n"
+        "3. run_code(code, language='python'): Execute Python code in an isolated Docker sandbox.\n"
+        "4. generate_docx(title, content, output_filename='Approval_Note.docx'): Generate a Word deliverable.\n"
+        "5. generate_psu_note(data, output_filename='Approval_Note.docx'): Generate an official PSU note sheet deliverable.\n"
+        "6. edit_spreadsheet(rows, output_filename='Calculation.xlsx'): Generate an Excel spreadsheet (rows is a 2D array of strings/numbers).\n"
+        "7. generate_pptx(title, slide_titles, slide_contents, output_filename='Report.pptx'): Generate a PowerPoint presentation.\n"
+        "8. ocr_document(file_path): OCR / parse document or image.\n\n"
+        "Guidelines:\n"
+        "- If the user asks to write/generate code or save to a file (e.g., 'Generate python code in ll.py'), generate the complete, production-ready code and return a write_file tool call with the full code in 'content' and target filename in 'file_path'. You may also include a run_code tool call to test it.\n"
+        "- If the user asks to inspect or read an existing document from the workspace, call read_file or ocr_document with the matching file name.\n"
+        "- If the user asks to perform calculations, write and run Python code using run_code.\n"
+        "- If the user asks for Word, Excel, or PPT deliverables, call the corresponding generation tool.\n"
+        "- Respond ONLY with a valid JSON array of tool calls. Do not output conversational text or markdown explanation.\n\n"
+        "Format:\n"
+        "[\n"
+        "  {\n"
+        "    \"tool\": \"tool_name\",\n"
+        "    \"args\": {\"param\": \"value\"}\n"
+        "  }\n"
+        "]\n"
+        "If no tool is needed, return: []"
+    )
+
+    prompt = f"User Request: {query}\n\nTool Plan (JSON array only):"
+    
+    payload = {
+        "model": model_name,
+        "system": system_prompt,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.1, "num_predict": 1200}
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
+            if res.status_code == 200:
+                raw_text = res.json().get("response", "").strip()
+                # Parse JSON array from LLM output
+                json_match = re.search(r'\[\s*\{.*?\}\s*\]', raw_text, re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group(0))
+                    if isinstance(parsed, list):
+                        return parsed
+                elif raw_text.startswith("[") and raw_text.endswith("]"):
+                    parsed = json.loads(raw_text)
+                    if isinstance(parsed, list):
+                        return parsed
+    except Exception as ex:
+        logger.warning(f"LLM tool planning failed ({ex}) — using fallback parser")
+
+    # Fast heuristic fallback if LLM planning had network issue
+    return _heuristic_tool_fallback(query, uploaded_file)
+
+def _heuristic_tool_fallback(query: str, uploaded_file: str | None = None) -> List[Dict[str, Any]]:
+    q_lower = query.lower()
+    tool_calls = []
+
+    # Auto-detect existing workspace files if mentioned
+    detected = auto_detect_relevant_files(query)
+    for f in detected[:2]:
+        if f["type"] in ["png", "jpg", "jpeg", "webp"] or "p&id" in q_lower:
+            tool_calls.append({"tool": "ocr_document", "args": {"file_path": f["path"]}})
+        else:
+            tool_calls.append({"tool": "read_file", "args": {"file_path": f["path"]}})
+
+    # Extract target file name if user requested saving/generating a file
+    fn_match = re.search(r'([\w\-]+\.(?:py|txt|json|csv|md|html|sh|sql))', query, re.IGNORECASE)
+    if fn_match:
+        target = fn_match.group(1)
+        if any(w in q_lower for w in ["write", "generate", "create", "save", "in one", "code"]):
+            tool_calls.append({
+                "tool": "write_file",
+                "args": {
+                    "file_path": target,
+                    "content": f"# Generated deliverable: {target}\n# Task: {query}\n"
+                }
+            })
+
+    return tool_calls
+
+async def tool_selector_node(state: AgentState) -> AgentState:
+    """Node 3: Tool Selector Node - Dynamically delegates tool planning and code generation to the local LLM."""
+    query = state.get("user_query", "").strip()
+    uploaded_file = state.get("uploaded_file")
+    selected_model = state.get("selected_model", "qwen2.5:7b-instruct")
+    task_type = state.get("task_type", "general")
+
+    # 1. Sovereign RAG retrieval from local knowledge base
+    rag_results = await RAGService.search_knowledge_base(query)
     state["context"] = rag_results
     add_audit_event(state, step="RAG", action="search_knowledge_base", status="success", details=f"Retrieved {len(rag_results)} context chunks from local vault")
 
-    # 2. Multimodal OCR / Drawing Extraction if file uploaded
-    if uploaded_file and not any(tc["tool"] == "ocr_document" for tc in tool_calls):
-        tool_calls.append({"tool": "ocr_document", "args": {"file_path": uploaded_file}})
+    # 2. Autonomous LLM Tool Planning & Payload Formulation
+    tool_calls = await _plan_tools_with_local_llm(
+        query=query,
+        selected_model=selected_model,
+        task_type=task_type,
+        uploaded_file=uploaded_file
+    )
 
-    # 3. Industrial Inspection & PSU Approval Note Workflow
-    is_inspection_flow = any(w in query for w in ["flange", "inspection", "approval note", "report", "thickness", "corrosion", "sop"]) or (uploaded_file and "inspection" in uploaded_file.lower())
-    
-    if is_inspection_flow:
-        # Schedule Sandboxed ASME B31.3 Barlow Calculation
-        if not any(tc["tool"] == "run_code" for tc in tool_calls):
-            calc_script = (
-                "import math\n"
-                "p_psi = 142.5\n"
-                "d_in = 12.4\n"
-                "s_psi = 16000.0\n"
-                "e_qual = 1.0\n"
-                "ca_in = 0.0787\n"
-                "t_des = (p_psi * d_in) / (2 * (s_psi * e_qual + p_psi * 0.4))\n"
-                "t_ret = t_des + ca_in\n"
-                "t_act = 0.1496\n"
-                "cr_yr = 0.0177\n"
-                "rem_life = (t_act - t_ret) / cr_yr\n"
-                "print(f'ASME_B31_3_DESIGN_T={t_des*25.4:.2f}mm')\n"
-                "print(f'RETIREMENT_T={t_ret*25.4:.2f}mm')\n"
-                "print(f'REMAINING_LIFE_YEARS={rem_life:.1f}')\n"
-                "print(f'SAFETY_STATUS=CRITICAL_DEFICIT')\n"
-            )
-            tool_calls.append({
-                "tool": "run_code",
-                "args": {"code": calc_script, "language": "python"}
-            })
-
-        # Schedule Official PSU Secretariat Green-Sheet Note
-        if not any(tc["tool"] == "generate_psu_note" for tc in tool_calls):
-            psu_note_payload = {
-                "file_reference_no": "IOCL/RHQ/PL-MAINT/2026/FL-402",
-                "subject": "REPLACEMENT & SHUTDOWN APPROVAL FOR FLANGE FL-402 DUE TO CRITICAL WALL THINNING",
-                "equipment_tag": "FL-402",
-                "nominal_thickness_mm": 6.4,
-                "measured_thickness_mm": 3.8,
-                "retirement_thickness_mm": 4.2,
-                "corrosion_rate_mm_year": 0.45,
-                "remaining_life_years": -0.89,
-                "compliance_status": "NON-COMPLIANT (CRITICAL DEFICIT)",
-                "statutory_standard": "ASME B31.3 Section 304.1.2 & OISD-105",
-                "operational_risk": "Severe risk of volatile hydrocarbon containment loss at 142.5 PSI operating envelope.",
-                "financial_estimate_inr": "₹ 14,50,000 (Fourteen Lakhs Fifty Thousand Only)",
-                "recommendation": "Executive approval is solicited to derate line operating pressure to 60 PSI immediately and sanction emergency replacement during the upcoming statutory turnaround."
-            }
-            tool_calls.append({
-                "tool": "generate_psu_note",
-                "args": {
-                    "data": psu_note_payload,
-                    "output_filename": "Approval_Note.docx"
-                }
-            })
-
-        # Schedule Calculation Spreadsheet Deliverable
-        if not any(tc["tool"] == "edit_spreadsheet" for tc in tool_calls):
-            tool_calls.append({
-                "tool": "edit_spreadsheet",
-                "args": {
-                    "rows": [
-                        ["Component Tag", "Parameter", "Measured Value", "Safety Threshold", "Status"],
-                        ["FL-402", "Ultrasonic Wall Thickness", "3.80 mm", "4.20 mm", "CRITICAL DEFICIT"],
-                        ["FL-402", "Operating Pressure", "142.5 PSI", "150.0 PSI", "OPERATIONAL"],
-                        ["FL-402", "Corrosion Rate", "0.45 mm/yr", "0.20 mm/yr", "ACCELERATED"],
-                        ["FL-402", "Remaining Life", "-0.89 Yrs", "> 2.0 Yrs", "REPLACE IMMEDIATELY"]
-                    ],
-                    "output_filename": "Calculation.xlsx"
-                }
-            })
-
-    # 4. P&ID Schematic Extraction Flow
-    elif any(w in query for w in ["p&id", "schematic", "drawing", "instrument", "equipment"]):
-        if not any(tc["tool"] == "edit_spreadsheet" for tc in tool_calls):
-            tool_calls.append({
-                "tool": "edit_spreadsheet",
-                "args": {
-                    "rows": [
-                        ["Tag Identifier", "Equipment / Loop Type", "Operational Status", "Safety Interlock"],
-                        ["P-101A", "Centrifugal Slurry Pump", "Active / Primary", "Trip on Low Level LSL-101"],
-                        ["V-204", "Three-Phase Separator", "Pressurized (142 PSI)", "Relief Valve PSV-204"],
-                        ["PT-201", "Pressure Transmitter", "Loop 201 Active", "Transmits to DCS-01"],
-                        ["LCV-301", "Level Control Valve", "Modulating (42% Open)", "Fail-Close (FC)"]
-                    ],
-                    "output_filename": "Calculation.xlsx"
-                }
-            })
-
-    # 5. General Document / Presentation Tools
-    if any(w in query for w in ["pptx", "powerpoint", "slides", "presentation"]):
-        if not any(tc["tool"] == "generate_pptx" for tc in tool_calls):
-            tool_calls.append({
-                "tool": "generate_pptx",
-                "args": {
-                    "title": "Industrial Operations Executive Brief",
-                    "slide_titles": ["Executive Summary", "Sovereignty Status", "Integrity Assessment"],
-                    "slide_contents": [
-                        "All inferencing performed 100% on local GPU hardware.",
-                        "External connections: 0 bytes. Air-gap verified via psutil.",
-                        "Flange FL-402 recommended for scheduled replacement."
-                    ],
-                    "output_filename": "Report.pptx"
-                }
-            })
+    # If uploaded file was provided and not yet in tool calls, attach it
+    if uploaded_file and not any(tc.get("args", {}).get("file_path") == uploaded_file for tc in tool_calls):
+        suffix = Path(uploaded_file).suffix.lower()
+        if suffix in [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".pdf"]:
+            tool_calls.insert(0, {"tool": "ocr_document", "args": {"file_path": uploaded_file}})
+        else:
+            tool_calls.insert(0, {"tool": "read_file", "args": {"file_path": uploaded_file}})
 
     state["tool_calls"] = tool_calls
     return state
@@ -183,7 +202,7 @@ async def tool_executor_node(state: AgentState) -> AgentState:
     generated_files = state.get("generated_files", [])
 
     for call in tool_calls:
-        tool_name = call["tool"]
+        tool_name = call.get("tool")
         tool_args = call.get("args", {})
         func = get_tool(tool_name)
 
@@ -196,15 +215,26 @@ async def tool_executor_node(state: AgentState) -> AgentState:
 
                 tool_results.append({"tool": tool_name, "result": res})
                 
-                # Track deliverables
-                if isinstance(res, dict) and "filename" in res:
-                    generated_files.append(res["filename"])
+                # Deliverables: ONLY creation/writing tools add output deliverables to download
+                if tool_name in ["write_file", "generate_docx", "generate_psu_note", "edit_spreadsheet", "generate_pptx"]:
+                    if isinstance(res, dict) and "filename" in res:
+                        generated_files.append(res["filename"])
+
+                # If read_file returned document content, inject into context sources
+                if tool_name == "read_file" and isinstance(res, dict) and res.get("content"):
+                    state["context"].insert(0, {
+                        "text": res["content"][:4000],
+                        "source": f"Workspace File ({res.get('clean_name') or res.get('filename', 'document')})",
+                        "page": 1,
+                        "score": 1.0,
+                        "extractor": "workspace_reader"
+                    })
 
                 # If OCR/MarkItDown extracted document text, inject into context sources
                 if tool_name == "ocr_document" and isinstance(res, dict) and res.get("text"):
                     doc_src = res.get("source") or (Path(tool_args.get("file_path", "")).name if tool_args.get("file_path") else "Document")
                     state["context"].insert(0, {
-                        "text": res["text"][:3000],
+                        "text": res["text"][:4000],
                         "source": f"Uploaded File ({doc_src})",
                         "page": res.get("pages", 1),
                         "score": 1.0,
@@ -223,6 +253,7 @@ async def tool_executor_node(state: AgentState) -> AgentState:
                 add_audit_event(state, step="Tool Execution", action=tool_name, status="error", details=str(ex))
         else:
             tool_results.append({"tool": tool_name, "error": f"Tool '{tool_name}' not registered."})
+            add_audit_event(state, step="Tool Execution", action=tool_name, status="error", details="Tool not registered")
 
     state["tool_results"] = tool_results
     state["generated_files"] = list(set(generated_files))
@@ -245,11 +276,10 @@ import httpx
 import base64
 from pathlib import Path
 
-async def _call_local_llm(user_query: str, selected_model: str, task_type: str, context: list, tool_results: list, uploaded_file: str | None = None) -> str:
-    """Invokes local Ollama model (with vision support for images/drawings and MarkItDown text) to generate real answer."""
+async def stream_local_llm(user_query: str, selected_model: str, task_type: str, context: list, tool_results: list, uploaded_file: str | None = None):
+    """Streams tokens from local Ollama model in real-time as an async generator."""
     model_lower = (selected_model or "").lower()
     
-    # Check if uploaded file is an image
     images_b64 = []
     is_image = False
     if uploaded_file and Path(uploaded_file).exists():
@@ -262,7 +292,6 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
             except Exception as ex:
                 logger.error(f"Error encoding image {uploaded_file}: {ex}")
 
-    # Select appropriate Ollama model (using exact verified local tags from config)
     if is_image or "vl" in model_lower:
         ollama_model = "qwen2.5vl:7b"
     elif "coder" in model_lower or task_type == "coding":
@@ -270,32 +299,121 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
     else:
         ollama_model = "qwen2.5:7b-instruct"
 
-    # Build prompt
     prompt_parts = [
-        "You are Sovereign AI Workbench, a secure on-premise AI assistant running locally.",
-        "Answer the user's question directly, accurately, and thoroughly using the provided context and document content.",
-        "If a document, receipt, or manual is provided, read all extracted text and tables carefully to answer specific questions."
+        "You are Sovereign AI Workbench, an expert on-premise industrial AI assistant running 100% air-gapped.",
+        "Provide a direct, thorough, and professional engineering response formatted in clean GitHub-flavored Markdown.",
+        "Use headers (###), bold text, bullet points, and code blocks where appropriate.",
+        "Reference statutory standards (such as ASME B31.3, OISD, API) and inspection data accurately."
     ]
 
-    # Add extracted document content from MarkItDown / OCR tools
     doc_context_added = False
     for tr in tool_results:
         res = tr.get("result")
         if isinstance(res, dict):
-            extracted_txt = res.get("text", "").strip()
+            extracted_txt = (res.get("text") or res.get("content") or "").strip()
             if extracted_txt:
-                doc_src = res.get("source") or "Uploaded Document"
-                prompt_parts.append(f"\n[UPLOADED DOCUMENT CONTENT via MarkItDown — Source: {doc_src}]:\n{extracted_txt[:6000]}")
+                doc_src = res.get("clean_name") or res.get("filename") or res.get("source") or "Workspace Document"
+                prompt_parts.append(f"\n[DOCUMENT CONTENT — Source: {doc_src}]:\n{extracted_txt[:6000]}")
                 doc_context_added = True
+            if res.get("stdout"):
+                prompt_parts.append(f"\n[SANDBOX PYTHON CALCULATION TELEMETRY]:\n{res['stdout'].strip()}")
             if res.get("tables"):
-                prompt_parts.append(f"\n[EXTRACTED TABLES / ROWS]:\n{res['tables']}")
+                prompt_parts.append(f"\n[EXTRACTED TABLES / DATA]:\n{res['tables']}")
             if res.get("findings"):
                 prompt_parts.append(f"\nInspection / Tool Findings: {res['findings']}")
             if res.get("equipment") or res.get("instruments"):
-                prompt_parts.append(f"\nExtracted P&ID Equipment: {res.get('equipment', [])} | Instruments: {res.get('instruments', [])}")
+                prompt_parts.append(f"\nExtracted Equipment: {res.get('equipment', [])} | Instruments: {res.get('instruments', [])}")
 
     if context and not doc_context_added:
-        context_str = "\n".join([f"- [{c.get('source', 'KB')} (Page {c.get('page', 1)})]: {c.get('text', '')}" for c in context[:3]])
+        context_str = "\n".join([f"- [{c.get('source', 'KB')} (Page {c.get('page', 1)})]: {c.get('text', '')}" for c in context[:4]])
+        prompt_parts.append(f"\nLocal Knowledge Base Context:\n{context_str}")
+
+    prompt_parts.append(f"\nUser Query: {user_query}\n\nAnswer:")
+    full_prompt = "\n".join(prompt_parts)
+
+    payload = {
+        "model": ollama_model,
+        "prompt": full_prompt,
+        "stream": True,
+        "options": {"temperature": 0.2, "num_predict": 700}
+    }
+    if images_b64:
+        payload["images"] = images_b64
+
+    import json
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", f"{OLLAMA_BASE_URL}/api/generate", json=payload) as response:
+                if response.status_code == 200:
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                chunk = json.loads(line)
+                                token = chunk.get("response", "")
+                                if token:
+                                    yield token
+                                if chunk.get("done", False):
+                                    break
+                            except Exception:
+                                pass
+                    return
+    except Exception as ex:
+        logger.warning(f"Ollama streaming failed ({ex}) — attempting synchronous fallback")
+
+    # Fallback to non-streaming call if stream fails
+    fallback_ans = await _call_local_llm(user_query, selected_model, task_type, context, tool_results, uploaded_file)
+    if fallback_ans:
+        yield fallback_ans
+
+async def _call_local_llm(user_query: str, selected_model: str, task_type: str, context: list, tool_results: list, uploaded_file: str | None = None) -> str:
+    """Invokes local Ollama model to generate answer synchronously."""
+    model_lower = (selected_model or "").lower()
+    
+    images_b64 = []
+    is_image = False
+    if uploaded_file and Path(uploaded_file).exists():
+        suffix = Path(uploaded_file).suffix.lower()
+        if suffix in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
+            try:
+                b64 = base64.b64encode(Path(uploaded_file).read_bytes()).decode("utf-8")
+                images_b64.append(b64)
+                is_image = True
+            except Exception as ex:
+                logger.error(f"Error encoding image {uploaded_file}: {ex}")
+
+    if is_image or "vl" in model_lower:
+        ollama_model = "qwen2.5vl:7b"
+    elif "coder" in model_lower or task_type == "coding":
+        ollama_model = "qwen2.5-coder:latest"
+    else:
+        ollama_model = "qwen2.5:7b-instruct"
+
+    prompt_parts = [
+        "You are Sovereign AI Workbench, a secure on-premise AI assistant running locally.",
+        "Answer the user's question directly, accurately, and thoroughly using the provided context and document content.",
+        "Format your answer with clear markdown structure, steps, and citations."
+    ]
+
+    doc_context_added = False
+    for tr in tool_results:
+        res = tr.get("result")
+        if isinstance(res, dict):
+            extracted_txt = (res.get("text") or res.get("content") or "").strip()
+            if extracted_txt:
+                doc_src = res.get("clean_name") or res.get("filename") or res.get("source") or "Workspace Document"
+                prompt_parts.append(f"\n[DOCUMENT CONTENT — Source: {doc_src}]:\n{extracted_txt[:6000]}")
+                doc_context_added = True
+            if res.get("stdout"):
+                prompt_parts.append(f"\n[SANDBOX PYTHON CALCULATION TELEMETRY]:\n{res['stdout'].strip()}")
+            if res.get("tables"):
+                prompt_parts.append(f"\n[EXTRACTED TABLES / DATA]:\n{res['tables']}")
+            if res.get("findings"):
+                prompt_parts.append(f"\nInspection / Tool Findings: {res['findings']}")
+            if res.get("equipment") or res.get("instruments"):
+                prompt_parts.append(f"\nExtracted Equipment: {res.get('equipment', [])} | Instruments: {res.get('instruments', [])}")
+
+    if context and not doc_context_added:
+        context_str = "\n".join([f"- [{c.get('source', 'KB')} (Page {c.get('page', 1)})]: {c.get('text', '')}" for c in context[:4]])
         prompt_parts.append(f"\nLocal Knowledge Base Context:\n{context_str}")
 
     prompt_parts.append(f"\nUser Query: {user_query}\n\nAnswer:")
@@ -320,7 +438,6 @@ async def _call_local_llm(user_query: str, selected_model: str, task_type: str, 
                     return answer
     except Exception as e:
         logger.warning(f"Ollama local LLM call failed ({e}) — trying fallback model")
-        # Try fallback models available locally
         for fallback_model in ["qwen2.5:7b-instruct", "qwen2.5vl:7b", "qwen2.5-coder:latest"]:
             if fallback_model == ollama_model:
                 continue
@@ -354,10 +471,8 @@ async def finalizer_node(state: AgentState) -> AgentState:
     tool_results = state.get("tool_results", [])
 
     uploaded_file = state.get("uploaded_file")
-    # Generate real response from local model
     llm_answer = await _call_local_llm(user_query, model, task_type, context, tool_results, uploaded_file)
 
-    # Build response: LLM answer first, then structured metadata footer
     response_lines = [
         "### Sovereign AI Workbench Response\n",
         f"**Model Routing**: Dispatched via `{model}` ({task_type.capitalize()} Specialist).",

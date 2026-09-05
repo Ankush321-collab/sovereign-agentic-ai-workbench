@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Any
-from backend.agent.graph import run_agent
+from backend.agent.graph import run_agent, stream_agent
 
 router = APIRouter(tags=["Agent"])
 
@@ -16,6 +17,29 @@ class AgentRunRequest(BaseModel):
 
 # Global audit trace store for status inspection
 LATEST_AGENT_STATE = {}
+
+@router.post("/api/agent/stream")
+@router.post("/agent/stream")
+async def stream_agent_endpoint(request: AgentRunRequest):
+    """
+    Real-Time Server-Sent Events (SSE) Agent Streaming Endpoint.
+    Streams plan, routing, live sandboxed code executions, thinking tokens, and deliverables.
+    """
+    user_query = request.query or request.message or ""
+    uploaded_file = request.file_id or None
+
+    if not user_query:
+        raise HTTPException(status_code=400, detail="Either 'query' or 'message' field required")
+
+    return StreamingResponse(
+        stream_agent(user_query=user_query, uploaded_file=uploaded_file),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @router.post("/api/agent/run")
 @router.post("/agent/run")

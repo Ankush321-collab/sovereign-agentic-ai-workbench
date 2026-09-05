@@ -4,7 +4,7 @@
  * Connects to FastAPI backend at localhost:8000
  */
 
-const BASE = 'http://localhost:8000';
+const BASE = import.meta.env.VITE_API_URL || '';
 
 const handle = async (res) => {
   if (!res.ok) {
@@ -31,6 +31,61 @@ export async function runAgent(query, fileId = null) {
   }));
 }
 
+/**
+ * Real-Time SSE Agent Streaming Client
+ * Parses SSE events ('plan', 'router', 'rag', 'tool_start', 'tool_output', 'token', 'deliverables', 'done')
+ */
+export async function streamAgent(query, fileId = null, onEvent = () => {}, onError = () => {}, onDone = () => {}) {
+  try {
+    const response = await fetch(`${BASE}/api/agent/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, file_id: fileId }),
+    });
+
+    if (!response.ok) {
+      const errTxt = await response.text();
+      throw new Error(errTxt || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep unfinished line in buffer
+
+      let currentEvent = 'message';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.replace('event: ', '').trim();
+        } else if (line.startsWith('data: ')) {
+          const rawData = line.replace('data: ', '').trim();
+          if (rawData) {
+            try {
+              const parsed = JSON.parse(rawData);
+              onEvent({ event: currentEvent, data: parsed });
+              if (currentEvent === 'done') {
+                onDone(parsed);
+              }
+            } catch (jsonErr) {
+              console.warn('Failed to parse SSE data:', rawData, jsonErr);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('SSE Stream error:', err);
+    onError(err);
+  }
+}
+
 // ── File upload ───────────────────────────────────────────────
 export async function uploadFile(file) {
   const fd = new FormData();
@@ -42,15 +97,35 @@ export async function getFiles() {
   return handle(await fetch(`${BASE}/api/files`));
 }
 
+export function getDownloadUrl(filename) {
+  return `${BASE}/api/files/download/${encodeURIComponent(filename)}`;
+}
+
 export async function downloadFile(filename) {
-  const res = await fetch(`${BASE}/api/files/download/${encodeURIComponent(filename)}`);
-  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-  const blob = await res.blob();
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  a.remove(); URL.revokeObjectURL(url);
+  const url = getDownloadUrl(filename);
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    }, 1500);
+  } catch (err) {
+    console.warn('Blob download fallback:', err);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 1000);
+  }
 }
 
 // ── Router ────────────────────────────────────────────────────

@@ -25,6 +25,8 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
     volumes:
+      # Mount backend folder for live code updates
+      - ./backend:/app/backend
       # Mount data folder for persistent uploads, vector index, and outputs
       - ./data:/app/data
       # Mount host HuggingFace cache for local offline sentence-transformers embeddings
