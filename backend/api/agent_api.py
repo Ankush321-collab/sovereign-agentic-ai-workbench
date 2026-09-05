@@ -17,6 +17,7 @@ class AgentRunRequest(BaseModel):
 # Global audit trace store for status inspection
 LATEST_AGENT_STATE = {}
 
+@router.post("/api/agent/run")
 @router.post("/agent/run")
 async def run_agent_endpoint(request: AgentRunRequest):
     """
@@ -42,6 +43,7 @@ async def run_agent_endpoint(request: AgentRunRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/api/agent/status")
 @router.get("/agent/status")
 async def get_agent_status_endpoint():
     """Gets the current agent status and audit execution trace."""

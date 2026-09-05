@@ -50,3 +50,18 @@ async def get_routing_info():
             for m in models.models
         ]
     }
+
+# Legacy un-prefixed router alias for /route and /routing compatibility
+legacy_router = APIRouter(tags=["Router-Legacy"])
+
+@legacy_router.post("/route", response_model=RouteResponse)
+async def legacy_route_query_endpoint(request: RouteRequest):
+    return _model_router.route(request)
+
+@legacy_router.get("/routing")
+async def legacy_get_routing_info():
+    return await get_routing_info()
+
+@legacy_router.get("/models", response_model=ModelListResponse)
+async def legacy_get_models_endpoint():
+    return _model_router.get_models()

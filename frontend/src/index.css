@@ -100,7 +100,7 @@ code,pre,kbd { font-family:var(--font-mono); }
 .av-ai   { background:linear-gradient(135deg,var(--blue),var(--cyan)); color:#fff; font-size:11px; }
 .msg-body { max-width:78%; display:flex; flex-direction:column; gap:5px; }
 .msg-row.user .msg-body { align-items:flex-end; }
-.msg-text { padding:11px 15px; border-radius:var(--r-lg); font-size:.88rem; line-height:1.75; word-break:break-word; }
+.msg-text { padding:11px 15px; border-radius:var(--r-lg); font-size:.88rem; line-height:1.75; word-break:break-word; white-space: pre-wrap; }
 .msg-row.user  .msg-text { background:linear-gradient(135deg,var(--blue),#5b8ef0); color:#fff; border-bottom-right-radius:var(--r-sm); }
 .msg-row.ai .msg-text { background:var(--bg-surface); border:1px solid var(--border); color:var(--text-primary); border-bottom-left-radius:var(--r-sm); }
 .msg-meta { display:flex; align-items:center; gap:7px; font-size:.68rem; color:var(--text-muted); padding:0 3px; }

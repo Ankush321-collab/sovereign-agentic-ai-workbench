@@ -357,20 +357,17 @@ async def finalizer_node(state: AgentState) -> AgentState:
     # Generate real response from local model
     llm_answer = await _call_local_llm(user_query, model, task_type, context, tool_results, uploaded_file)
 
-    response_lines = []
-
-    if llm_answer:
-        response_lines.append(llm_answer)
-        response_lines.append("")
-    else:
-        response_lines.append(f"### Sovereign AI Workbench Response\n")
-        response_lines.append(f"**Model Routing**: Executed via `{model}` ({task_type.capitalize()} Task).")
-        response_lines.append(f"*Reason*: {reason}\n")
+    # Build response: LLM answer first, then structured metadata footer
     response_lines = [
         "### Sovereign AI Workbench Response\n",
         f"**Model Routing**: Dispatched via `{model}` ({task_type.capitalize()} Specialist).",
         f"*Rationale*: {reason}\n"
     ]
+
+    if llm_answer:
+        response_lines.append("#### 🤖 AI Answer:")
+        response_lines.append(llm_answer)
+        response_lines.append("")
 
     if context:
         response_lines.append("#### 📖 Grounded Knowledge Base Context:")

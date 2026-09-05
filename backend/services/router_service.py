@@ -1,6 +1,6 @@
 import logging
 import httpx
-from backend.config import ROUTER_SERVICE_URL, ENABLE_SERVICE_FALLBACKS
+from backend.config import ROUTER_SERVICE_URL, ENABLE_SERVICE_FALLBACKS, SARVAM_SERVICE_URL
 
 logger = logging.getLogger("router_service")
 
@@ -11,19 +11,44 @@ class RouterService:
         Interfaces with Aarav's Model Router service.
         Classifies task as reasoning/document, coding, or vision, selects model, and gives reason.
         """
-        payload = {
-            "query": query,
-            "has_image": bool(uploaded_file and uploaded_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp'))),
-            "has_file": bool(uploaded_file)
-        }
+        router_url = (ROUTER_SERVICE_URL or "").strip().rstrip("/")
+        
+        # If running unified / in-process (e.g. backend:8000, localhost:8000, or inprocess),
+        # avoid circular HTTP self-calls which cause connection refused / deadlocks.
+        is_self = not router_url or router_url.lower() in ["inprocess", "local", "none"] or ":8000" in router_url or "backend:8000" in router_url
+        if not is_self:
+            payload = {
+                "query": query,
+                "has_image": bool(uploaded_file and uploaded_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp'))),
+                "has_file": bool(uploaded_file)
+            }
+            try:
+                async with httpx.AsyncClient(timeout=1.5) as client:
+                    res = await client.post(f"{router_url}/route", json=payload)
+                    if res.status_code == 200:
+                        return res.json()
+            except Exception as e:
+                logger.debug(f"External router service at {router_url} not available ({e}), falling back to in-process routing")
 
+        # In-process ModelRouter routing (Aarav's multi-stage classifier & registry)
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                res = await client.post(f"{ROUTER_SERVICE_URL}/route", json=payload)
-                if res.status_code == 200:
-                    return res.json()
-        except Exception as e:
-            logger.warning(f"Failed to connect to Model Router service at {ROUTER_SERVICE_URL}: {e}")
+            from backend.router.router import ModelRouter
+            from backend.router.schemas import RouteRequest
+            router = ModelRouter()
+            req = RouteRequest(
+                query=query,
+                has_image=bool(uploaded_file and uploaded_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp'))),
+                has_file=bool(uploaded_file)
+            )
+            res = router.route(req)
+            return {
+                "task": res.task_type,
+                "model": res.model,
+                "endpoint": res.endpoint,
+                "reason": res.reason
+            }
+        except Exception:
+            pass
 
         if ENABLE_SERVICE_FALLBACKS:
             return RouterService._fallback_route(query, uploaded_file)
@@ -64,6 +89,6 @@ class RouterService:
         return {
             "task": "document_reasoning",
             "model": "Sarvam-30B",
-            "endpoint": "http://localhost:8001",
+            "endpoint": SARVAM_SERVICE_URL,
             "reason": "Industrial reasoning and SOP document synthesis request"
         }

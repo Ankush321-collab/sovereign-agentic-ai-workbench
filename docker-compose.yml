@@ -18,12 +18,17 @@ services:
     env_file:
       - .env.docker
     environment:
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - ROUTER_SERVICE_URL=inprocess
+      - SARVAM_SERVICE_URL=${SARVAM_SERVICE_URL:-http://host.docker.internal:8001}
+      - SARVAM_ENDPOINT=${SARVAM_ENDPOINT:-http://host.docker.internal:8001}
       - HOST=0.0.0.0
       - PORT=8000
     volumes:
       # Mount data folder for persistent uploads, vector index, and outputs
       - ./data:/app/data
+      # Mount host HuggingFace cache for local offline sentence-transformers embeddings
+      - ~/.cache/huggingface:/root/.cache/huggingface
     networks:
       - sovereign-net
     extra_hosts:
@@ -60,53 +65,10 @@ services:
       timeout: 3s
       retries: 3
 
-  # ── 3. Ollama Inference Engine (Air-Gapped Local LLM Server) ───────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: sovereign-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_models:/root/.ollama
-    networks:
-      - sovereign-net
-    # To enable NVIDIA GPU acceleration in Docker, uncomment below:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
-  # ── 4. Optional Model Initialization Helper ─────────────────────────────────
-  # Run `docker compose --profile init-models up` to automatically pull
-  # the default recommended models into the persistent named volume.
-  ollama-init:
-    image: ollama/ollama:latest
-    container_name: sovereign-ollama-init
-    profiles:
-      - init-models
-    networks:
-      - sovereign-net
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Waiting for Ollama service..."
-        while ! curl -s http://ollama:11434/api/tags > /dev/null; do
-          sleep 2
-        done
-        echo "Pulling qwen2.5:7b-instruct..."
-        ollama pull qwen2.5:7b-instruct
-        echo "Model initialization complete!"
-    depends_on:
-      - ollama
-
-# ── Persistent Storage Volumes ────────────────────────────────────────────────
-volumes:
-  ollama_models:
-    name: sovereign_ollama_models
+  # ── 3. Ollama is running on the Windows HOST machine ───────────────────────
+  # Models available on host: qwen2.5vl:7b, qwen2.5:7b-instruct, qwen2.5-coder:latest
+  # The backend uses host.docker.internal:11434 to reach it — no container needed.
+  # Run `ollama serve` on your Windows machine before starting Docker Compose.
 
 # ── Isolated Air-Gapped Network ───────────────────────────────────────────────
 networks:

@@ -28,6 +28,7 @@ app.include_router(chat.router)
 app.include_router(upload.router)
 app.include_router(agent_api.router)
 app.include_router(router_api.router)        # prefix="/api/router" (built-in)
+app.include_router(router_api.legacy_router) # /route, /routing, /models (unprefixed fallback)
 app.include_router(network_api.router)       # registers /network/status + /api/network/status
 app.include_router(files_api.router)
 app.include_router(rag_api.router)
