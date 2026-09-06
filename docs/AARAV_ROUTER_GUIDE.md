@@ -1,13 +1,16 @@
-# 🛡️ Aarav's Module — Multi-Model Router & Model Serving
+# 🛡️ Aarav's Module — Multi-Model Router, Model Serving & Sovereign Document Generation (PDF Artifact Pipeline)
 
 ## Overview
 
-Aarav's module serves as the **Model Router & Model Serving Layer** of the **Sovereign AI Workbench**. It provides a local, configuration-driven routing mechanism that dynamically selects the right local AI model for every user query while ensuring zero external network calls.
+Aarav's module serves two core roles in the **Sovereign AI Workbench**:
+1. **Model Router & Model Serving Layer**: Provides a local, configuration-driven routing mechanism that dynamically selects the right local AI model for every user query while ensuring zero external network calls.
+2. **Sovereign PDF Generation & Verification Pipeline**: Implements an air-gapped, deterministic PDF generation engine (`backend/documents/pdf_renderer.py`) that converts structured JSON outputs produced by the local LLM pipeline (Qwen) into official, publication-grade `Approval_Note.pdf` artifacts.
 
 ---
 
 ## 🏗️ Architecture & Component Design
 
+### 1. Multi-Model Router Architecture
 ```text
                      FastAPI / LangGraph Agent
                                  │
@@ -34,6 +37,45 @@ Aarav's module serves as the **Model Router & Model Serving Layer** of the **Sov
   (Sarvam / Qwen)          (Qwen2.5-Coder)          (Qwen2.5-VL)
 ```
 
+### 2. Sovereign PDF Generation & Validation Pipeline
+```text
+                     Existing AI / LangGraph Agent
+                                  │
+                                  ▼
+           [1] Context Grounding & Tool Results Execution
+         (RAG Chunks + MarkItDown Text + Sandboxed Python Calc)
+                                  │
+                                  ▼
+           [2] Local Qwen Ollama Call ("format": "json")
+                                  │
+                                  ▼
+                        Raw JSON Text Output
+                                  │
+                                  ▼
+                        [3] Strict Validation
+               json.loads() → PDFApprovalData.model_validate()
+                                  │
+                                  ▼
+                        [4] Dict Handoff
+                           model_dump()
+                                  │
+                                  ▼
+                   [5] Local ReportLab Renderer
+               (backend/documents/pdf_renderer.py)
+                                  │
+                                  ▼
+                          Approval_Note.pdf
+                     (data/outputs/Approval_Note.pdf)
+                                  │
+                                  ▼
+                   [6] Post-Generation Verification
+              (pypdf.PdfReader Reopen, Text & Page Check)
+                                  │
+                                  ▼
+               [7] SHA-256 Hash & ArtifactResult
+               {filename, path, sha256, validation_status}
+```
+
 ---
 
 ## 📂 Module Structure
@@ -49,6 +91,15 @@ backend/router/
 ├── client.py             # Local model generation client abstraction
 └── router.py             # Core ModelRouter orchestrator and history manager
 
+backend/documents/
+├── __init__.py           # Package initializer
+├── schemas.py            # PDFApprovalData, InspectionFinding, & ArtifactResult schemas
+└── pdf_renderer.py       # Deterministic ReportLab renderer and pypdf verification engine
+
+backend/tools/
+├── document_tool.py      # generate_pdf_note tool wrapper
+└── registry.py           # Central Tool Registry mapping generate_pdf_note
+
 backend/api/
 └── router_api.py         # FastAPI routes (POST /route, GET /models, GET /routing/history)
 ```
@@ -57,6 +108,7 @@ backend/api/
 
 ## ⚙️ How It Works
 
+### A. Multi-Model Router Flow
 1. **Request Intake (`POST /route`)**:
    Accepts a `RouteRequest` payload containing the prompt query, `has_image`, `has_file`, or an explicit `task_type`.
 
@@ -79,7 +131,32 @@ backend/api/
 
 ---
 
-## 🔌 API Endpoints
+### B. PDF Generation & Verification Pipeline
+1. **Structured Input Generation (`_generate_structured_pdf_data`)**:
+   - Synthesizes user query, RAG context, MarkItDown document extractions, and deterministic calculation outputs (`run_code` stdout).
+   - Invokes local Qwen model using Ollama's `"format": "json"` mode with strict system prompts forbidding hallucinated measurements or dates.
+
+2. **Strict Schema Validation**:
+   - Qwen output is parsed via `json.loads()`.
+   - Validated against the `PDFApprovalData` Pydantic schema, including nested `InspectionFinding` models (`Component`, `Nominal`, `Measured`, `Status`).
+   - If validation fails, execution halts cleanly and records a failure event without passing corrupt data to the renderer.
+
+3. **Deterministic ReportLab Rendering (`pdf_renderer.py`)**:
+   - Converts `PDFApprovalData.model_dump()` into a styled PDF with standard document margins, header metadata, styled sections, and alternating-row inspection tables.
+   - Runs 100% locally with zero network calls.
+
+4. **Mandatory Post-Generation Verification**:
+   - Immediately re-opens the output `Approval_Note.pdf`.
+   - Verifies file existence, size > 0, and page count > 0 using `pypdf.PdfReader`.
+   - Extracts Page 1 text to ensure expected header strings (`INDIAN OIL` / `NOTE SHEET`) are present.
+   - Computes a SHA-256 cryptographic hash of the PDF binary.
+
+5. **Artifact Result Packaging**:
+   - Returns a structured `ArtifactResult` dictionary containing `filename`, `path`, `sha256`, `validation_status` (`"success"` or `"degraded/failed"`), and `warnings`.
+
+---
+
+## 🔌 API Endpoints & Tool Registrations
 
 ### 1. `POST /route`
 - **Request**:
@@ -132,18 +209,18 @@ backend/api/
   }
   ```
 
-### 3. `GET /routing/history`
-- **Response**:
+### 3. `generate_pdf_note` Tool Call
+- **Input Parameters**: `data` (dict following `PDFApprovalData`), `output_filename` (`Approval_Note.pdf`)
+- **Output Response**: `ArtifactResult` dictionary:
   ```json
   {
-    "history": [
-      {
-        "task_type": "coding",
-        "model": "qwen-coder",
-        "reason": "Coding/debugging request detected from keyword 'traceback'",
-        "endpoint": "http://localhost:11434"
-      }
-    ]
+    "filename": "Approval_Note.pdf",
+    "file_type": "pdf",
+    "path": "C:\\fullstack\\sovereign-agentic-ai-workbench\\data\\outputs\\Approval_Note.pdf",
+    "sha256": "e8f7e29ed25375393c24c4b46bd474781c50f8eb46858833768f0199511a1e9b",
+    "validation_status": "success",
+    "source_evidence_ids": [],
+    "warnings": []
   }
   ```
 
@@ -151,18 +228,16 @@ backend/api/
 
 ## 🚀 How Aarav's Module Helps the Entire Project
 
-1. **Powers Model Selection for Ankush (LangGraph Agent)**:
-   - Provides Ankush's agent orchestrator with instantaneous model selection and populates `selected_model` and `routing_reason` in the shared `AgentState`.
+1. **Powers Model Selection & Deliverables for LangGraph Agent**:
+   - Provides Ankush's agent orchestrator with instantaneous model routing and automates end-to-end PDF deliverable generation.
 
 2. **Supports Roshan's React Frontend & Sovereignty View**:
    - Supplies `/models` and `/routing/history` endpoints to populate the **Model Routing Panel** on the UI.
-   - Provides clear, transparent `reason` fields showing users why each local model was chosen.
+   - Outputs verified `Approval_Note.pdf` artifacts that show up directly in the UI Deliverables pane.
 
 3. **Ensures Reliability with Zero Cloud Dependency**:
    - Operates 100% locally with zero external API calls, satisfying strict air-gapped sovereignty requirements for confidential industrial environments.
 
-4. **Prevents Resource Waste & Hardware Overload**:
-   - Directs code queries to fast coder models, vision tasks to vision-capable models, and analytical queries to reasoning models, ensuring hardware resources are utilized efficiently.
-
-5. **Configuration-Driven Flexibility**:
-   - Models and endpoints can be swapped in `model_registry.yaml` without changing application code or breaking upstream services.
+4. **Guarantees Artifact Integrity**:
+   - Strict Pydantic validation prevents LLM hallucinations from corrupting document generation.
+   - Reopens generated PDFs to confirm structural integrity and calculate cryptographic SHA-256 hashes before reporting success.

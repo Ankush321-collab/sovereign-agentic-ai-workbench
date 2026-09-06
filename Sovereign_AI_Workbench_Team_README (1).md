@@ -24,19 +24,19 @@ The system is designed around:
 - Live network/sovereignty monitoring
 - Auditable execution traces
 
-The proposed architecture uses **React + Tailwind**, **FastAPI + LangGraph**, local model serving through **vLLM/Ollama**, **ChromaDB** for RAG, **Docling/Tesseract** for document processing, and Docker-based sandboxing.  
+The proposed architecture uses **React + Tailwind**, **FastAPI + LangGraph**, local model serving through **vLLM/Ollama**, **ChromaDB** for RAG, **Docling/Tesseract** for document processing, and Docker-based sandboxing.
 
 ---
 
 # 2. 🎯 Team Members & Responsibilities
 
-| Member | Primary Responsibility | Branch |
-|---|---|---|
-| **Ankush** | Agentic Backend + LangGraph + Integration Lead | `feature/ankush-agent-backend` |
-| **Aarav** | Multi-Model Router + Model Serving | `feature/aarav-model-router` |
-| **Krishna** | RAG + Local Knowledge Base | `feature/krishna-rag` |
-| **Pankaj** | Multimodal AI + OCR + P&ID | `feature/pankaj-multimodal` |
-| **Roshan** | React Frontend + Sovereignty Dashboard | `feature/roshan-frontend-security` |
+| Member      | Primary Responsibility                         | Branch                             |
+| ----------- | ---------------------------------------------- | ---------------------------------- |
+| **Ankush**  | Agentic Backend + LangGraph + Integration Lead | `feature/ankush-agent-backend`     |
+| **Aarav**   | Multi-Model Router + Model Serving             | `feature/aarav-model-router`       |
+| **Krishna** | RAG + Local Knowledge Base                     | `feature/krishna-rag`              |
+| **Pankaj**  | Multimodal AI + OCR + P&ID                     | `feature/pankaj-multimodal`        |
+| **Roshan**  | React Frontend + Sovereignty Dashboard         | `feature/roshan-frontend-security` |
 
 > **Important:** Each member owns their module, but the final application is one integrated system. Do not independently redesign shared APIs or the agent state without discussing it with the team.
 
@@ -420,6 +420,11 @@ Output:
 - Router API
 - Model health check
 - Fallback model handling
+- Capability-aware routing for text, vision, OCR escalation, coding, and document generation
+- One shared routing contract used by the LangGraph agent and frontend
+- Verified model availability from the local Ollama/vLLM registry
+- Selected model propagation from routing through final generation
+- Local-only network validation for every model endpoint
 
 ## Definition of Done
 
@@ -429,6 +434,10 @@ Output:
 - Model can be changed through configuration
 - Backend can call the router
 - No cloud LLM dependency
+- The selected model is actually used by the generation client
+- Vision tasks are routed to a vision-capable model and coding tasks to a coding-capable model
+- Unavailable models produce a visible local fallback decision
+- Router tests prove that no external endpoint is contacted
 
 ---
 
@@ -645,10 +654,7 @@ Output:
 ```json
 {
   "type": "inspection_report",
-  "findings": [
-    "Corrosion observed",
-    "Valve requires inspection"
-  ],
+  "findings": ["Corrosion observed", "Valve requires inspection"],
   "values": []
 }
 ```
@@ -1670,28 +1676,33 @@ This maps directly to the proposed SIH demo path: scanned inspection report → 
 Everyone should prioritize these first.
 
 ### Ankush
+
 - FastAPI
 - LangGraph
 - Agent loop
 - Tool calling
 
 ### Aarav
+
 - 2 local models
 - Basic router
 - Routing explanation
 
 ### Krishna
+
 - ChromaDB
 - Document ingestion
 - Retrieval
 - Citations
 
 ### Pankaj
+
 - OCR
 - Vision model
 - Scanned document processing
 
 ### Roshan
+
 - Chat UI
 - File upload
 - Agent trace
@@ -1730,23 +1741,28 @@ The project plan itself recommends starting with a small demo-ready local stack 
 ## DAY 1 — Foundation
 
 **Ankush**
+
 - FastAPI
 - LangGraph skeleton
 
 **Aarav**
+
 - Local models
 - Model serving
 
 **Krishna**
+
 - ChromaDB
 - Sample documents
 
 **Pankaj**
+
 - Docling
 - Tesseract
 - Qwen-VL setup
 
 **Roshan**
+
 - React
 - Dashboard skeleton
 
@@ -1755,21 +1771,26 @@ The project plan itself recommends starting with a small demo-ready local stack 
 ## DAY 2 — Individual Modules
 
 **Ankush**
+
 - Agent nodes
 - Tool interface
 
 **Aarav**
+
 - Router
 - Classification
 
 **Krishna**
+
 - Retrieval
 - Citations
 
 **Pankaj**
+
 - OCR + Vision
 
 **Roshan**
+
 - Chat
 - Upload
 - Routing UI
@@ -1887,3 +1908,374 @@ PROVE ZERO EXTERNAL CALLS
 ```
 
 **The most important rule for the team: build independently, but integrate continuously.**
+
+---
+
+# 22. 🚀 Complete Implementation Workflow — Problem Statement 26117
+
+This is the implementation contract for the final product. OCR, routing, RAG, agent execution, file generation, and sovereignty proof must be delivered as one connected workflow.
+
+## 22.1 Required End-to-End Flow
+
+```text
+Upload scanned inspection PDF or image
+  ↓
+Validate, quarantine, hash, and identify file type
+  ↓
+Native PDF extraction or local page rasterization
+  ↓
+Local OCR for printed text and English printed handwriting
+  ↓
+Low-confidence regions sent to local vision model
+  ↓
+Structured evidence with page, region, unit, and confidence
+  ↓
+Aarav's local model router selects the capable model
+  ↓
+LangGraph agent plans the task
+  ↓
+Local RAG retrieves SOPs, manuals, and standards
+  ↓
+Inspection facts and measurements are normalized
+  ↓
+Deterministic engineering calculation in Docker sandbox
+  ↓
+Validation and contradiction check
+  ↓
+Approval or human-review checkpoint
+  ↓
+Generate verified PDF, DOCX, and XLSX deliverables
+  ↓
+Final response with citations, calculations, files, and trace
+  ↓
+Enforced network policy and audit proof
+```
+
+The first demo scope is English printed text and English printed handwriting. Indian-language handwriting is out of scope for the first release and must be reported as unsupported rather than silently misread.
+
+## 22.2 Shared Contracts
+
+Before integration, Ankush, Aarav, Krishna, Pankaj, and Roshan must agree on these typed objects:
+
+```text
+DocumentPage
+  page_number, text, tables, regions, confidence, extraction_method
+
+EvidenceItem
+  evidence_id, source_file, page, region, field_name, value, unit, confidence
+
+InspectionData
+  equipment_tag, nominal_thickness, measured_thickness,
+  minimum_allowable_thickness, corrosion_rate, operating_pressure,
+  source_evidence_ids, validation_status
+
+CalculationResult
+  formula, inputs, units, outputs, compliance_status,
+  execution_environment, source_evidence_ids
+
+RoutingDecision
+  task, model_tag, endpoint, capabilities, healthy,
+  fallback_used, reason, local_only
+
+ArtifactResult
+  filename, file_type, path, sha256, validation_status,
+  source_evidence_ids, warnings
+```
+
+`AgentState` must carry these structured objects. Do not pass important measurements, citations, or routing data only as unvalidated strings.
+
+## 22.3 Build Order
+
+### Step 1 — Secure file intake
+
+Owner: Ankush, with Roshan integration.
+
+- Generate server-side file IDs.
+- Store the original filename as metadata only.
+- Enforce file size and type limits.
+- Allow PDF, PNG, JPG, JPEG, TXT, DOCX, XLSX, and PPTX.
+- Quarantine uploads before processing.
+- Store SHA-256, MIME type, and processing status.
+- Reject path traversal and unsupported files.
+
+`POST /upload` must return a server ID, stored path, hash, file type, and quarantine status.
+
+### Step 2 — Canonical document understanding
+
+Owner: Pankaj. Aarav supplies model capabilities. Ankush integrates the service.
+
+Use one active pipeline for all PDFs and images. It must:
+
+1. Detect file type.
+2. Extract native PDF text and tables.
+3. Detect scanned or low-text pages.
+4. Rasterize scanned pages locally.
+5. Run local OCR page by page.
+6. Detect handwriting and low-confidence regions.
+7. Escalate those regions to the local vision model.
+8. Merge OCR and vision results with page and region provenance.
+9. Extract tags, measurements, findings, dates, and recommendations.
+10. Return confidence and extraction method for every field.
+
+Create or consolidate around:
+
+```text
+backend/documents/schemas.py
+backend/documents/understanding.py
+backend/documents/provenance.py
+backend/documents/pdf_renderer.py
+```
+
+### Step 3 — Aarav's model-routing assignment
+
+Owner: **Aarav — Multi-Model Router, Local Model Serving, and Capability Integration**.
+
+Aarav must deliver:
+
+```text
+[ ] One configuration-driven model registry.
+[ ] Deterministic classification for coding, document, reasoning, vision, OCR escalation, and general tasks.
+[ ] Local Ollama/vLLM health and installed-model checks.
+[ ] Capability-aware fallback selection.
+[ ] Rejection of non-local endpoints and cloud URLs.
+[ ] Structured RoutingDecision response.
+[ ] POST /route, GET /models, and GET /routing/history.
+[ ] Generation client that accepts the selected model tag.
+[ ] Selected model propagation into AgentState and final generation.
+[ ] Routing reason and fallback status in the audit trace.
+[ ] Tests for coding, document, vision, escalation, fallback, and endpoint rejection.
+[ ] Docker GPU-server preload instructions.
+```
+
+Registry shape:
+
+```yaml
+models:
+  text:
+    tag: qwen2.5:7b-instruct
+    endpoint: http://ollama:11434
+    capabilities: [reasoning, document, general, summarization]
+    enabled: true
+  vision:
+    tag: qwen2.5vl:7b
+    endpoint: http://ollama:11434
+    capabilities: [vision, image, ocr, pid, handwriting_escalation]
+    enabled: true
+  coding:
+    tag: qwen2.5-coder:latest
+    endpoint: http://ollama:11434
+    capabilities: [coding, debugging, code_generation]
+    enabled: true
+```
+
+Required route response:
+
+```json
+{
+  "task": "vision",
+  "model_tag": "qwen2.5vl:7b",
+  "endpoint": "http://ollama:11434",
+  "capabilities": ["vision", "ocr", "handwriting_escalation"],
+  "healthy": true,
+  "fallback_used": false,
+  "reason": "Scanned image requires visual interpretation",
+  "local_only": true
+}
+```
+
+Aarav must update and integrate:
+
+```text
+backend/router/router.py
+backend/router/classifier.py
+backend/router/client.py
+backend/router/health.py
+backend/router/fallback.py
+backend/router/model_registry.yaml
+backend/services/router_service.py
+backend/api/router_api.py
+backend/agent/nodes.py
+config/ollama_config.yaml
+```
+
+The selected model tag must reach the actual local generation call. No module may replace it with a hard-coded model name. Aarav must not implement document rendering or engineering calculations.
+
+Aarav's definition of done:
+
+```text
+Coding request → configured coding model
+SOP/document request → configured text model
+Scanned image/P&ID → configured vision model
+Low OCR confidence → visible vision escalation
+Unavailable primary → healthy local fallback
+Non-local endpoint → rejected before execution
+/models → real health status
+/routing/history → decision and reason
+All routing tests pass without internet
+```
+
+### Step 4 — Local RAG and evidence grounding
+
+Owner: Krishna, integrated by Ankush.
+
+- Ingest SOPs, manuals, standards, and sample correspondence locally.
+- Persist embeddings in local ChromaDB.
+- Return source, page, section, and score metadata.
+- Assign reusable evidence IDs.
+- Preserve evidence into calculations, responses, and generated artifacts.
+- Never use cloud embeddings or hosted vector databases.
+
+### Step 5 — Replace synthetic inspection data
+
+Owner: Ankush and Pankaj, with Aarav model support.
+
+Remove hard-coded FL-402 measurements, financial values, risk statements, and recommendations from the active workflow. Populate `InspectionData` from the uploaded document and evidence store.
+
+Required fields:
+
+```text
+Equipment/component tag
+Nominal thickness
+Measured thickness
+Minimum allowable thickness
+Corrosion rate
+Operating pressure
+Inspection date
+Observed defect
+Recommended action
+```
+
+Rules:
+
+- Never invent missing values.
+- Preserve original and normalized units.
+- Mark conflicting values for review.
+- Separate extracted facts from model inferences.
+- Block approval-note generation below the confidence threshold.
+
+### Step 6 — Deterministic calculation sandbox
+
+Owner: Ankush, with Docker support.
+
+The LLM may explain a formula, but deterministic code must calculate the result. The sandbox must use Docker with no network, non-root execution, read-only root filesystem, dropped capabilities, resource limits, isolated temporary storage, explicit mounts, and no runtime image pulling. Fail closed when isolation is unavailable.
+
+Every result must include formula, inputs, units, output, compliance status, execution environment, and evidence IDs.
+
+### Step 7 — Generate real PDF and office artifacts
+
+Owner: Ankush, with Roshan for display and downloads.
+
+Required main-demo outputs:
+
+```text
+Approval_Note.pdf
+Approval_Note.docx
+Calculation.xlsx
+```
+
+Optional: `Executive_Brief.pptx`.
+
+Qwen must produce structured content, not PDF bytes. Use a deterministic local PDF renderer such as ReportLab or a pinned local HTML-to-PDF renderer. Reopen every generated artifact and verify its type, headings, tables, measurements, calculations, citations, and non-empty content. A degraded fallback must be reported as degraded, not successful.
+
+### Step 8 — Conditional agent workflow
+
+Owner: Ankush.
+
+Replace the current strictly linear graph with:
+
+```text
+planner
+  ↓
+understand_document → retrieve_evidence → extract_structured_data
+  ↓
+calculate → validate
+  ├── missing/contradictory → request review
+  ├── low confidence → OCR/vision escalation
+  └── valid → approval checkpoint
+       ↓
+       generate_artifacts
+       ↓
+       verify_artifacts
+       ├── failure → repair/regenerate
+       └── success → finalizer
+```
+
+Persist jobs by ID. Do not use one global last-state object for concurrent users. The UI must display the current stage, warnings, approval state, and artifact verification state.
+
+### Step 9 — Enforce sovereignty
+
+Owner: Roshan and Ankush, with Aarav validating model endpoints.
+
+- Preload models before the air-gapped demo.
+- Disable model pulls during runtime.
+- Use Docker default-deny networking.
+- Permit only required internal destinations.
+- Reject public URLs in model, OCR, embedding, and rendering configuration.
+- Log allowed and denied egress attempts.
+- Monitor backend, Ollama, workers, and sandbox processes.
+- Export a hash-verified audit record.
+
+The UI must distinguish observed connections from enforced policy:
+
+```text
+Observed external connections: 0
+Enforced external egress policy: ACTIVE
+Denied external attempts: 0
+Local services: backend, Ollama, ChromaDB, sandbox
+```
+
+### Step 10 — Frontend integration
+
+Owner: Roshan, with Ankush API support.
+
+The final demo must run with `VITE_USE_MOCK=false` and display upload status, agent stage, routing decision, selected model, evidence citations, calculation inputs/outputs, approval state, generated files, artifact verification, full trace, and enforced sovereignty status.
+
+## 22.4 Required Fixtures and Tests
+
+Create local fixtures:
+
+```text
+tests/fixtures/scanned_inspection.pdf
+tests/fixtures/handwritten_inspection.png
+tests/fixtures/sample_pid.png
+tests/fixtures/safety_sop.txt
+```
+
+Required tests:
+
+```text
+Upload → validation → stored file
+Scanned PDF → page text, tables, confidence, provenance
+Handwritten image → OCR/vision escalation → structured text
+P&ID image → tags and confidence
+Coding/document/vision → correct local model
+Inspection evidence → deterministic calculation
+Missing/contradictory evidence → approval blocked
+Calculation → PDF/DOCX/XLSX
+Generated files → reopened and verified
+Sandbox → network/filesystem escape blocked
+External endpoint → rejected
+Audit → local-only proof exported
+Frontend mock disabled → real workflow succeeds
+```
+
+## 22.5 Final Acceptance Checklist
+
+```text
+[ ] Docker starts with preloaded local models.
+[ ] Runtime requires no model download.
+[ ] Scanned inspection PDF is understood locally.
+[ ] English printed handwriting is processed or clearly flagged with confidence.
+[ ] P&ID image produces structured tags.
+[ ] Document, coding, and vision routing is visible.
+[ ] RAG returns local citations.
+[ ] Agent uses extracted values rather than hard-coded FL-402 data.
+[ ] Calculation runs in an isolated sandbox.
+[ ] Missing or contradictory measurements block approval generation.
+[ ] PDF, DOCX, and XLSX deliverables are generated and verified.
+[ ] Artifacts include evidence and calculation references.
+[ ] Audit trace shows every important operation.
+[ ] Network policy is enforced, not only observed.
+[ ] Complete demo runs repeatedly from a clean deployment.
+[ ] Backup recording and fixture set are available.
+```

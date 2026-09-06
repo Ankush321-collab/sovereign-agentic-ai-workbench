@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 import logging
 from backend.config import OUTPUTS_DIR
 from backend.services.multimodal_service import MultimodalService
@@ -112,3 +112,16 @@ def edit_spreadsheet(rows: list[list], output_filename: str = "Calculation.xlsx"
 async def ocr_document(file_path: str) -> dict:
     """Invokes Pankaj's Multimodal Pipeline for document OCR and visual inspection."""
     return await MultimodalService.process_document(file_path)
+
+def generate_pdf_note(data: dict, output_filename: str = "Approval_Note.pdf") -> dict:
+    """Generates an executive/industrial PDF document deliverable and verifies it."""
+    try:
+        from backend.documents.pdf_renderer import generate_approval_note_pdf
+        return generate_approval_note_pdf(data, output_filename)
+    except Exception as e:
+        logger.error(f"Failed to call generate_approval_note_pdf: {e}")
+        return {
+            "success": False,
+            "filename": output_filename,
+            "message": f"Failed to generate PDF: {e}"
+        }
