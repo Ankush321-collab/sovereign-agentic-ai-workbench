@@ -24,21 +24,9 @@ The system is designed around:
 
 The proposed architecture uses **React + Tailwind**, **FastAPI + LangGraph**, local model serving through **vLLM/Ollama**, **ChromaDB** for RAG, **Docling/Tesseract** for document processing, and Docker-based sandboxing.  
 
----
 
-# 2. 🎯 Team Members & Responsibilities
 
-| Member | Primary Responsibility | Branch |
-|---|---|---|
-| **Ankush** | Agentic Backend + LangGraph + Integration Lead | `feature/ankush-agent-backend` |
-| **Aarav** | Multi-Model Router + Model Serving | `feature/aarav-model-router` |
-| **Krishna** | RAG + Local Knowledge Base | `feature/krishna-rag` |
-| **Pankaj** | Multimodal AI + OCR + P&ID | `feature/pankaj-multimodal` |
-| **Roshan** | React Frontend + Sovereignty Dashboard | `feature/roshan-frontend-security` |
 
-> **Important:** Each member owns their module, but the final application is one integrated system. Do not independently redesign shared APIs or the agent state without discussing it with the team.
-
----
 
 # 3. 🏗️ Overall Architecture
 
@@ -60,7 +48,7 @@ The proposed architecture uses **React + Tailwind**, **FastAPI + LangGraph**, lo
               ▼                        ▼                        ▼
       ┌───────────────┐       ┌───────────────┐       ┌────────────────┐
       │ Model Router  │       │      RAG      │       │  Multimodal    │
-      │    Aarav      │       │    Krishna    │       │     Pankaj     │
+      │    Model Router      │       │    RAG    │       │     Multimodal     │
       └───────┬───────┘       └───────────────┘       └────────────────┘
               │
        ┌──────┼──────────┐
@@ -81,782 +69,9 @@ The proposed architecture uses **React + Tailwind**, **FastAPI + LangGraph**, lo
 
                          ┌──────────────────────────────┐
                          │ Sovereignty / Network Monitor│
-                         │       Roshan + Ankush        │
+                         │       Frontend / Security + Agentic Backend        │
                          └──────────────────────────────┘
 ```
-
----
-
-# 4. 👨‍💻 ANKUSH — Agentic Backend & Integration Lead
-
-## Branch
-
-```bash
-feature/ankush-agent-backend
-```
-
-## Primary Goal
-
-Build the **brain/orchestrator** of the entire application.
-
-Ankush is responsible for connecting the Router, RAG, Multimodal pipeline, tools, sandbox, and frontend APIs.
-
-## Main Technologies
-
-- Python
-- FastAPI
-- LangGraph
-- Pydantic
-- WebSockets where required
-- Docker integration
-- Python logging
-
-## Responsibilities
-
-### 4.1 FastAPI Backend
-
-Create the central API.
-
-Expected endpoints:
-
-```text
-POST /chat
-POST /upload
-POST /agent/run
-GET  /agent/status
-GET  /routing
-GET  /network/status
-GET  /files
-```
-
-Suggested structure:
-
-```text
-backend/
-├── main.py
-├── config.py
-├── api/
-│   ├── chat.py
-│   ├── upload.py
-│   ├── agent.py
-│   └── status.py
-├── agent/
-│   ├── graph.py
-│   ├── state.py
-│   ├── nodes.py
-│   └── prompts.py
-├── tools/
-│   ├── file_tool.py
-│   ├── code_tool.py
-│   └── document_tool.py
-└── services/
-```
-
-### 4.2 LangGraph Agent
-
-Implement:
-
-```text
-User Request
-     ↓
-Understand
-     ↓
-Plan
-     ↓
-Select Tool
-     ↓
-Execute
-     ↓
-Observe
-     ↓
-Reflect
-     ↓
- ┌───┴────┐
- │        │
-Loop    Finish
-```
-
-Required nodes:
-
-```text
-planner
-router
-tool_selector
-tool_executor
-reflection
-finalizer
-```
-
-### 4.3 Shared Agent State
-
-Create a common state object:
-
-```python
-class AgentState(TypedDict):
-    user_query: str
-    uploaded_file: str | None
-    task_type: str
-    selected_model: str
-    routing_reason: str
-    context: list
-    tool_calls: list
-    tool_results: list
-    final_response: str
-    generated_files: list
-    audit_log: list
-```
-
-All other modules should work with this contract.
-
-### 4.4 Tools
-
-Integrate:
-
-```text
-read_file
-write_file
-search_knowledge_base
-run_code
-edit_spreadsheet
-generate_docx
-generate_pptx
-ocr_document
-```
-
-### 4.5 Audit Trace
-
-Every important operation should be logged:
-
-```json
-{
-  "step": "RAG",
-  "action": "search_knowledge_base",
-  "status": "success"
-}
-```
-
-The frontend will display this trace.
-
-## Ankush Deliverables
-
-- Working FastAPI server
-- LangGraph agent
-- Shared AgentState
-- Tool interface
-- Audit logging
-- API documentation
-- Integration of all modules
-- Final merge coordination
-- End-to-end testing
-
-## Definition of Done
-
-Ankush's module is complete when:
-
-- FastAPI starts successfully
-- `/chat` works
-- LangGraph executes a multi-step task
-- Tools can be called
-- Tool results return to the graph
-- Agent can loop/refine
-- Audit events are generated
-- Router/RAG/Multimodal services can be plugged in
-
----
-
-# 5. 🧠 AARAV — Multi-Model Router & Model Serving
-
-## Branch
-
-```bash
-feature/aarav-model-router
-```
-
-## Primary Goal
-
-Build the **Model Router** that automatically decides which local AI model should handle a request.
-
-The project needs multiple models and transparent routing.
-
-## Main Technologies
-
-- Python
-- vLLM / Ollama
-- OpenAI-compatible local APIs where applicable
-- YAML/JSON
-- Classification logic
-- HTTP clients
-
-## Models
-
-Target architecture:
-
-```text
-Reasoning / Document → Sarvam-30B or Qwen
-Coding              → Qwen2.5-Coder
-Vision              → Qwen2.5-VL
-```
-
-Hardware limitations should determine the final model sizes.
-
-## 5.1 Model Registry
-
-Create:
-
-```text
-router/model_registry.yaml
-```
-
-Example:
-
-```yaml
-models:
-  reasoning:
-    name: sarvam
-    endpoint: http://localhost:8001
-    tasks:
-      - reasoning
-      - document
-      - general
-
-  coding:
-    name: qwen-coder
-    endpoint: http://localhost:8002
-    tasks:
-      - coding
-      - debugging
-
-  vision:
-    name: qwen-vl
-    endpoint: http://localhost:8003
-    tasks:
-      - vision
-      - image
-      - document
-```
-
-## 5.2 Task Classification
-
-Example:
-
-```text
-"Fix this Python error"
-        ↓
-      CODING
-        ↓
- Qwen Coder
-```
-
-```text
-"Summarize this SOP"
-        ↓
-    DOCUMENT
-        ↓
-Reasoning Model
-```
-
-```text
-"Read this P&ID"
-        ↓
-     VISION
-        ↓
-Qwen-VL
-```
-
-## 5.3 Routing Explanation
-
-Every routing decision must provide a reason:
-
-```json
-{
-  "task": "coding",
-  "model": "Qwen-Coder",
-  "reason": "Request contains Python code and a traceback"
-}
-```
-
-This will be shown in the frontend.
-
-## 5.4 Router API
-
-Expose:
-
-```text
-POST /route
-GET /models
-GET /routing/history
-```
-
-Input:
-
-```json
-{
-  "query": "Fix this Python code",
-  "has_image": false,
-  "has_file": true
-}
-```
-
-Output:
-
-```json
-{
-  "task": "coding",
-  "model": "qwen-coder",
-  "endpoint": "http://localhost:8002",
-  "reason": "Coding request detected"
-}
-```
-
-## Aarav Deliverables
-
-- Local model serving
-- Model registry
-- Task classifier
-- Router
-- Routing reason
-- Router API
-- Model health check
-- Fallback model handling
-
-## Definition of Done
-
-- At least 2 local models work
-- Router correctly identifies basic task types
-- Routing decision is returned as structured JSON
-- Model can be changed through configuration
-- Backend can call the router
-- No cloud LLM dependency
-
----
-
-# 6. 📚 KRISHNA — RAG & Local Knowledge Base
-
-## Branch
-
-```bash
-feature/krishna-rag
-```
-
-## Primary Goal
-
-Build the **local knowledge system** that allows the AI to answer using organizational SOPs, manuals, and documents.
-
-## Main Technologies
-
-- Python
-- ChromaDB
-- bge-m3 / Qwen embeddings
-- Document loaders
-- Chunking
-- Retrieval
-
-## 6.1 Document Ingestion
-
-Input:
-
-```text
-SOP.pdf
-Manual.pdf
-Safety.pdf
-Inspection_Report.pdf
-```
-
-Pipeline:
-
-```text
-Documents
-   ↓
-Text Extraction
-   ↓
-Cleaning
-   ↓
-Chunking
-   ↓
-Embeddings
-   ↓
-ChromaDB
-```
-
-## 6.2 Chunking
-
-Store metadata:
-
-```json
-{
-  "source": "safety_manual.pdf",
-  "page": 12,
-  "section": "Emergency Procedure"
-}
-```
-
-This allows citations.
-
-## 6.3 Retrieval
-
-Function:
-
-```python
-search_knowledge_base(query)
-```
-
-Expected result:
-
-```json
-{
-  "documents": [
-    {
-      "text": "...",
-      "source": "SOP.pdf",
-      "page": 12,
-      "score": 0.87
-    }
-  ]
-}
-```
-
-## 6.4 RAG Pipeline
-
-```text
-User Question
-      ↓
-Query Embedding
-      ↓
-ChromaDB
-      ↓
-Top-K Documents
-      ↓
-Context
-      ↓
-Reasoning Model
-      ↓
-Grounded Answer
-```
-
-## 6.5 Citation System
-
-The answer should identify the source:
-
-```text
-According to Safety SOP...
-
-Source:
-Safety_SOP.pdf — Page 12
-```
-
-## Krishna Deliverables
-
-- Document ingestion pipeline
-- Chunking system
-- Embedding system
-- ChromaDB setup
-- Retriever
-- Metadata/citation system
-- RAG API
-- Sample knowledge base
-
-## Definition of Done
-
-- 5–10 sample documents indexed
-- Search returns relevant chunks
-- Metadata is preserved
-- Source citations are returned
-- FastAPI/agent can call RAG
-- Everything works locally
-
----
-
-# 7. 👁️ PANKAJ — Multimodal AI, OCR & P&ID
-
-## Branch
-
-```bash
-feature/pankaj-multimodal
-```
-
-## Primary Goal
-
-Build the system that understands:
-
-- Scanned PDFs
-- Photos
-- Handwriting
-- Industrial drawings
-- P&IDs
-- Tables
-- Visual information
-
-## Main Technologies
-
-- Python
-- Docling
-- Tesseract
-- Qwen2.5-VL
-- OpenCV
-- YOLO/object detection if feasible
-
-## 7.1 Document Pipeline
-
-```text
-PDF / Image
-     ↓
-  Docling
-     ↓
-Layout + Text
-     ↓
- OCR if required
-     ↓
- Qwen-VL
-     ↓
-Structured JSON
-```
-
-## 7.2 OCR
-
-Create:
-
-```python
-ocr_document(file)
-```
-
-Output:
-
-```json
-{
-  "text": "...",
-  "pages": 3,
-  "tables": [],
-  "confidence": 0.91
-}
-```
-
-## 7.3 Vision Understanding
-
-Input:
-
-```text
-inspection.jpg
-```
-
-Output:
-
-```json
-{
-  "type": "inspection_report",
-  "findings": [
-    "Corrosion observed",
-    "Valve requires inspection"
-  ],
-  "values": []
-}
-```
-
-## 7.4 P&ID Feature
-
-This is one of the team's major uniqueness features.
-
-Pipeline:
-
-```text
-P&ID Image
-    ↓
-Symbol / Tag Detection
-    ↓
-Equipment + Instrument Tags
-    ↓
-Qwen-VL
-    ↓
-Interpretation
-    ↓
-Structured JSON
-```
-
-Example:
-
-```json
-{
-  "equipment": [
-    {
-      "tag": "P-101",
-      "type": "Pump"
-    }
-  ],
-  "instruments": [
-    {
-      "tag": "PT-201",
-      "type": "Pressure Transmitter"
-    }
-  ]
-}
-```
-
-If a full YOLO detector is too time-consuming, implement a simpler demonstrable P&ID extraction pipeline first and treat advanced detection as an enhancement.
-
-## Pankaj Deliverables
-
-- Docling integration
-- OCR pipeline
-- Vision model integration
-- Image preprocessing
-- Structured output schema
-- P&ID prototype
-- Multimodal API
-
-## Definition of Done
-
-- Scanned PDF can be processed
-- Image can be understood
-- OCR output is available
-- Vision model receives image data
-- Structured JSON is returned
-- Agent can call the multimodal pipeline
-
----
-
-# 8. 🎨 ROSHAN — Frontend + Sovereignty Dashboard
-
-## Branch
-
-```bash
-feature/roshan-frontend-security
-```
-
-## Primary Goal
-
-Build the **user-facing interface** and the visible proof that the system is running locally.
-
-## Main Technologies
-
-- React
-- Tailwind CSS
-- JavaScript/TypeScript
-- WebSocket where required
-- Python network monitoring integration
-
-## 8.1 Main UI
-
-Build:
-
-```text
-Dashboard
-Chat
-File Upload
-Agent Trace
-Model Routing
-Sources
-Generated Files
-Network Status
-```
-
-Suggested UI:
-
-```text
-┌──────────────────────────────────────────────┐
-│       SOVEREIGN AI WORKBENCH                │
-├───────────────────────┬──────────────────────┤
-│                       │ MODEL ROUTING         │
-│ Chat                  │                      │
-│                       │ Model: Qwen Coder    │
-│ User: Fix this code   │ Reason: Coding task  │
-│                       │                      │
-│ AI: ...               ├──────────────────────┤
-│                       │ AGENT TRACE           │
-│                       │ ✓ Planning            │
-│                       │ ✓ Router              │
-│                       │ ✓ RAG                 │
-│                       │ ✓ Tool execution      │
-│                       │ ✓ Final response      │
-│                       ├──────────────────────┤
-│                       │ 🔒 SOVEREIGNTY        │
-│                       │ External: 0           │
-│                       │ Local: Active         │
-└───────────────────────┴──────────────────────┘
-```
-
-## 8.2 Routing Panel
-
-Display:
-
-```text
-Selected Model:
-Qwen2.5-Coder
-
-Task:
-Coding
-
-Reason:
-Python traceback detected
-```
-
-## 8.3 Agent Trace
-
-Show:
-
-```text
-✓ User request received
-✓ Task classified
-✓ Model selected
-✓ Knowledge base searched
-✓ Tool executed
-✓ Result verified
-✓ Deliverable generated
-```
-
-## 8.4 Sovereignty Dashboard
-
-Show:
-
-```text
-NETWORK STATUS
-
-External Connections: 0
-
-Local Connections: 4
-
-Internet Access: BLOCKED
-
-Firewall: ACTIVE
-
-Data Status:
-LOCAL ONLY ✓
-```
-
-The project specifically proposes a live visual panel showing zero external connections rather than relying only on a hidden log. 
-
-## 8.5 Generated Files
-
-Display:
-
-```text
-Generated Files
-
-📄 Approval_Note.docx
-📊 Calculation.xlsx
-📑 Report.pptx
-```
-
-## Roshan Deliverables
-
-- React application
-- Dashboard
-- Chat interface
-- Upload interface
-- Agent trace
-- Router panel
-- RAG source display
-- Generated-file display
-- Network status panel
-- API integration
-
-## Definition of Done
-
-- User can send a request
-- User can upload files
-- Agent progress is visible
-- Routing decision is visible
-- Sources are visible
-- Generated files are visible
-- Network status is visible
 
 ---
 
@@ -1033,31 +248,31 @@ cd sovereign-ai-workbench
 
 ## Create Your Branch
 
-### Ankush
+### Agentic Backend
 
 ```bash
 git checkout -b feature/ankush-agent-backend
 ```
 
-### Aarav
+### Model Router
 
 ```bash
 git checkout -b feature/aarav-model-router
 ```
 
-### Krishna
+### RAG
 
 ```bash
 git checkout -b feature/krishna-rag
 ```
 
-### Pankaj
+### Multimodal
 
 ```bash
 git checkout -b feature/pankaj-multimodal
 ```
 
-### Roshan
+### Frontend / Security
 
 ```bash
 git checkout -b feature/roshan-frontend-security
@@ -1122,9 +337,9 @@ Only merge through Pull Requests.
 For example:
 
 ```text
-Krishna → owns rag/
-Pankaj  → owns multimodal/
-Aarav   → owns router/
+RAG → owns rag/
+Multimodal  → owns multimodal/
+Model Router   → owns router/
 ```
 
 ### Rule 3 — Shared files require communication
@@ -1168,21 +383,21 @@ The modules should eventually connect like this:
                          │
                          ▼
                   React Frontend
-                     Roshan
+                     Frontend / Security
                          │
                          ▼
                     FastAPI
-                     Ankush
+                     Agentic Backend
                          │
                          ▼
                   LangGraph Agent
-                     Ankush
+                     Agentic Backend
                          │
               ┌──────────┼──────────┐
               │          │          │
               ▼          ▼          ▼
            Router       RAG      Multimodal
-           Aarav       Krishna      Pankaj
+           Model Router       RAG      Multimodal
               │          │          │
               └──────────┼──────────┘
                          ▼
@@ -1206,7 +421,7 @@ The modules should eventually connect like this:
 
 # 16. 🧪 Testing Responsibilities
 
-## Ankush
+## Agentic Backend
 
 Integration tests:
 
@@ -1214,7 +429,7 @@ Integration tests:
 Frontend → API → Agent → Tool → Response
 ```
 
-## Aarav
+## Model Router
 
 Test:
 
@@ -1224,7 +439,7 @@ Document → Reasoning Model
 Image → Vision Model
 ```
 
-## Krishna
+## RAG
 
 Test:
 
@@ -1232,7 +447,7 @@ Test:
 Document → Embedding → ChromaDB → Relevant Context
 ```
 
-## Pankaj
+## Multimodal
 
 Test:
 
@@ -1240,7 +455,7 @@ Test:
 Image → OCR/Vision → Structured Output
 ```
 
-## Roshan
+## Frontend / Security
 
 Test:
 
@@ -1262,13 +477,13 @@ The team should demonstrate one complete scenario rather than showing disconnect
 ```text
 1. Upload scanned inspection report
              ↓
-2. Pankaj's OCR/Vision pipeline processes it
+2. Multimodal's OCR/Vision pipeline processes it
              ↓
-3. Ankush's LangGraph agent creates a plan
+3. Agentic Backend's LangGraph agent creates a plan
              ↓
-4. Aarav's router selects the appropriate model
+4. Model Router's router selects the appropriate model
              ↓
-5. Krishna's RAG searches the local SOP/manual
+5. RAG's RAG searches the local SOP/manual
              ↓
 6. Agent combines findings + SOP information
              ↓
@@ -1276,7 +491,7 @@ The team should demonstrate one complete scenario rather than showing disconnect
              ↓
 8. Agent verifies the result
              ↓
-9. Roshan's UI displays the complete trace
+9. Frontend / Security's UI displays the complete trace
              ↓
 10. Sovereignty panel shows:
         External Connections = 0
@@ -1292,29 +507,29 @@ This maps directly to the proposed SIH demo path: scanned inspection report → 
 
 Everyone should prioritize these first.
 
-### Ankush
+### Agentic Backend
 - FastAPI
 - LangGraph
 - Agent loop
 - Tool calling
 
-### Aarav
+### Model Router
 - 2 local models
 - Basic router
 - Routing explanation
 
-### Krishna
+### RAG
 - ChromaDB
 - Document ingestion
 - Retrieval
 - Citations
 
-### Pankaj
+### Multimodal
 - OCR
 - Vision model
 - Scanned document processing
 
-### Roshan
+### Frontend / Security
 - Chat UI
 - File upload
 - Agent trace
@@ -1352,24 +567,24 @@ The project plan itself recommends starting with a small demo-ready local stack 
 
 ## DAY 1 — Foundation
 
-**Ankush**
+**Agentic Backend**
 - FastAPI
 - LangGraph skeleton
 
-**Aarav**
+**Model Router**
 - Local models
 - Model serving
 
-**Krishna**
+**RAG**
 - ChromaDB
 - Sample documents
 
-**Pankaj**
+**Multimodal**
 - Docling
 - Tesseract
 - Qwen-VL setup
 
-**Roshan**
+**Frontend / Security**
 - React
 - Dashboard skeleton
 
@@ -1377,22 +592,22 @@ The project plan itself recommends starting with a small demo-ready local stack 
 
 ## DAY 2 — Individual Modules
 
-**Ankush**
+**Agentic Backend**
 - Agent nodes
 - Tool interface
 
-**Aarav**
+**Model Router**
 - Router
 - Classification
 
-**Krishna**
+**RAG**
 - Retrieval
 - Citations
 
-**Pankaj**
+**Multimodal**
 - OCR + Vision
 
-**Roshan**
+**Frontend / Security**
 - Chat
 - Upload
 - Routing UI
@@ -1448,38 +663,9 @@ Prepare:
 
 ---
 
-# 20. 🧑‍🤝‍🧑 Team Ownership Summary
+# Final Project Goal
 
-```text
-ANKUSH
-↓
-"The Brain"
-FastAPI + LangGraph + Agent + Integration
-
-AARAV
-↓
-"The Model Manager"
-vLLM/Ollama + Router + Model Selection
-
-KRISHNA
-↓
-"The Memory"
-ChromaDB + Embeddings + RAG + Citations
-
-PANKAJ
-↓
-"The Eyes"
-OCR + Vision + P&ID + Multimodal
-
-ROSHAN
-↓
-"The Interface & Security View"
-React + Dashboard + Network/Sovereignty UI
-```
-
----
-
-# 21. 🎯 Final Goal
+al
 
 The five modules must become **one product**, not five separate projects.
 
