@@ -1,8 +1,6 @@
 # 🛡️ Sovereign AI Workbench — SIH 2026
 
-**Smart India Hackathon 2026 | Problem Statement 26117 | Team: Quanta Codes**
 
-> A fully local, multi-model, agentic AI workbench for confidential industrial work that can understand documents/images, use local knowledge, execute tools, generate real deliverables, and provide visible proof that data does not leave the organization's environment.
 
 ---
 
